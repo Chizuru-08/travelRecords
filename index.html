@@ -1,0 +1,2923 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>旅行足迹 - 我的旅游打卡地图</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 50%, #f0f2f5 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 30px; background: #fff;
+            border-radius: 20px; margin-bottom: 25px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+        }
+        .logo { display: flex; align-items: center; gap: 15px; }
+        .logo i { font-size: 2.5rem; color: #4CAF50; }
+        .logo h1 { font-size: 1.8rem; font-weight: 700; color: #333; }
+        .stats-summary { display: flex; gap: 30px; }
+        .stat-item { text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: 700; color: #4CAF50; }
+        .stat-label { font-size: 0.85rem; color: #666; }
+        
+        .main-content { display: grid; grid-template-columns: 1fr 350px; gap: 25px; align-items: stretch; }
+        .left-panel { display: flex; flex-direction: column; gap: 20px; align-self: stretch; }
+        
+        .map-section {
+            background: #fff; border-radius: 20px; padding: 20px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+            display: flex; flex-direction: column; height: 100%;
+        }
+        .section-title {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 1.2rem; font-weight: 600; margin-bottom: 15px;
+            color: #333;
+        }
+        .section-title i { color: #4CAF50; }
+        
+        .map-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .map-tab {
+            padding: 10px 20px; border: none; border-radius: 10px;
+            background: #f0f0f0; color: #666; cursor: pointer;
+            font-size: 14px; transition: all 0.3s;
+        }
+        .map-tab:hover { background: #e0e0e0; }
+        .map-tab.active {
+            background: linear-gradient(135deg, #4CAF50, #8BC34A);
+            color: #fff; font-weight: 600;
+        }
+        
+        .map-container { position: relative; flex: 1; min-height: 500px; border-radius: 15px; overflow: hidden; }
+        #worldMap, #chinaMap {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            border-radius: 15px;
+        }
+        #worldMap { display: none; }
+        
+        /* 地图背景改为白色 */
+        .leaflet-container { background: #fff; }
+        
+        /* 圆形照片标记 */
+        .leaflet-marker-icon.photo-icon {
+            background: transparent !important;
+            border: none !important;
+        }
+        .photo-marker {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 3px solid #fff;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f0f0f0;
+            display: block;
+        }
+        .photo-marker:hover {
+            transform: scale(1.3);
+            border-color: #4CAF50;
+            box-shadow: 0 5px 20px rgba(76,175,80,0.5);
+            z-index: 1000 !important;
+        }
+        .photo-marker img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .photo-marker.no-photo {
+            background: linear-gradient(135deg, #4CAF50, #8BC34A);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 18px;
+        }
+        .temp-select-marker {
+            width: 20px;
+            height: 20px;
+            background: #ff6b6b;
+            border-radius: 50%;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        
+        /* 区域名称标签（直接显示在地图上） */
+        .region-label {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: #555;
+            font-size: 11px;
+            font-weight: 500;
+            text-shadow: 1px 1px 2px #fff, -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 100 !important;
+        }
+        .region-label.visited {
+            color: #2E7D32;
+            font-weight: 600;
+        }
+        .region-label::before {
+            display: none !important;
+        }
+        .region-label.hidden {
+            display: none !important;
+        }
+        
+        /* 图片标记在最上层 */
+        .leaflet-marker-pane {
+            z-index: 700 !important;
+        }
+        .photo-icon {
+            z-index: 800 !important;
+        }
+        
+        /* 照片悬浮提示 */
+        .photo-tooltip {
+            background: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.25);
+            max-width: 280px;
+            z-index: 10000 !important;
+        }
+        .photo-tooltip .leaflet-tooltip-content { margin: 0; }
+        .photo-tooltip::before {
+            border-top-color: #fff !important;
+        }
+        .tooltip-photo-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .tooltip-nav {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        .tooltip-nav:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+        .tooltip-photo-count {
+            position: absolute;
+            bottom: 6px;
+            right: 8px;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        /* 提升悬浮照片层级，避免被名称遮挡 */
+        .leaflet-tooltip-pane { z-index: 650 !important; }
+        .leaflet-popup-pane { z-index: 700 !important; }
+        .leaflet-photo-pane { z-index: 1000 !important; }
+        .photo-tooltip { position: relative; z-index: 10000 !important; }
+        .region-label { z-index: 100 !important; }
+        
+        /* 图例 */
+        .map-legend {
+            display: flex; gap: 20px; margin-top: 12px;
+            font-size: 12px; color: #666;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-color { width: 20px; height: 20px; border-radius: 4px; }
+        .legend-visited { background: #4CAF50; }
+        .legend-unvisited { background: #ccc; }
+        
+        /* 右侧添加打卡面板 */
+        .sidebar { display: flex; flex-direction: column; gap: 20px; align-self: stretch; }
+        .panel {
+            background: #fff; border-radius: 20px; padding: 20px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+            height: 100%;
+            overflow: auto;
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #555; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%; padding: 12px 15px; border: 1px solid #ddd;
+            border-radius: 10px; background: #f9f9f9; color: #333;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            outline: none; border-color: #4CAF50; background: #fff;
+        }
+        .form-group select option { background: #fff; color: #333; }
+        
+        /* 成员下拉选择样式 */
+        .member-dropdown {
+            position: relative;
+        }
+        .member-dropdown-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .member-dropdown-trigger:hover {
+            border-color: #4CAF50;
+            background: #fff;
+        }
+        .member-dropdown-trigger i {
+            color: #888;
+            transition: transform 0.2s;
+        }
+        .member-dropdown.open .member-dropdown-trigger {
+            border-color: #4CAF50;
+            background: #fff;
+        }
+        .member-dropdown.open .member-dropdown-trigger i {
+            transform: rotate(180deg);
+        }
+        .member-dropdown-text {
+            color: #555;
+            font-size: 14px;
+        }
+        .member-dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            margin-top: 5px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            z-index: 100;
+            display: none;
+            overflow: hidden;
+        }
+        .member-dropdown.open .member-dropdown-menu {
+            display: block;
+        }
+        .member-option {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .member-option:last-child {
+            border-bottom: none;
+        }
+        .member-option:hover {
+            background: #f5f5f5;
+        }
+        .member-option.selected {
+            background: #e8f5e9;
+            color: #2E7D32;
+        }
+        .member-option i {
+            opacity: 0;
+            color: #4CAF50;
+            transition: opacity 0.2s;
+        }
+        .member-option.selected i {
+            opacity: 1;
+        }
+        .member-option[data-value="all"] {
+            background: #f9f9f9;
+            font-weight: 500;
+        }
+        .member-option[data-value="all"].selected {
+            background: #e8f5e9;
+        }
+        .member-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e3f2fd;
+            color: #1976D2;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-right: 4px;
+        }
+        
+        .search-box { display: flex; gap: 8px; }
+        .search-box input { flex: 1; }
+        .search-box button {
+            padding: 12px 16px; background: #4CAF50; border: none;
+            border-radius: 10px; color: #fff; cursor: pointer;
+        }
+        .search-box button:hover { background: #43A047; }
+        
+        /* 搜索结果下拉 */
+        .search-results {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: #fff; border-radius: 10px; margin-top: 5px;
+            max-height: 200px; overflow-y: auto; z-index: 1000;
+            display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+        .search-results.show { display: block; }
+        .search-result-item {
+            padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #eee; color: #333;
+        }
+        .search-result-item:hover { background: #f5f5f5; }
+        .search-result-item:last-child { border-bottom: none; }
+        
+        /* 上传按钮样式 */
+        .upload-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #666;
+            font-size: 14px;
+        }
+        .upload-btn:hover {
+            border-color: #4CAF50;
+            background: linear-gradient(135deg, #f0fff0, #e8f5e9);
+            color: #4CAF50;
+        }
+        .upload-btn i {
+            font-size: 24px;
+        }
+        
+        .photo-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .photo-preview-item {
+            position: relative; width: 55px; height: 55px;
+        }
+        .photo-preview-item img {
+            width: 100%; height: 100%; object-fit: cover; border-radius: 8px;
+        }
+        .photo-preview-item .remove-photo {
+            position: absolute; top: -5px; right: -5px;
+            width: 18px; height: 18px; background: #ff4444; border: none;
+            border-radius: 50%; color: #fff; cursor: pointer; font-size: 10px;
+        }
+        
+        .form-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-primary {
+            flex: 1; padding: 14px; border: none; border-radius: 12px;
+            background: linear-gradient(135deg, #4CAF50, #8BC34A); color: #fff;
+            font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(76,175,80,0.4); }
+        .btn-cancel {
+            padding: 14px 20px; border: none; border-radius: 12px;
+            background: #f5f5f5; color: #666;
+            font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s;
+        }
+        .btn-cancel:hover { background: #e0e0e0; }
+        .btn-secondary {
+            padding: 10px 16px; border: none; border-radius: 10px;
+            background: #eef2f7; color: #445;
+            font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary:hover { background: #dde3ee; }
+        .stats-tools {
+            display: flex; gap: 10px; margin-top: 15px;
+        }
+        
+        /* 打卡记录表格 */
+        .records-section {
+            background: #fff; border-radius: 20px; padding: 20px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.08); margin-top: 20px;
+        }
+        .records-table {
+            width: 100%; border-collapse: collapse; margin-top: 15px;
+        }
+        .records-table th, .records-table td {
+            padding: 12px 15px; text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .records-table th {
+            background: #e8f5e9; color: #2E7D32;
+            font-weight: 600; font-size: 13px;
+        }
+        .records-table td { font-size: 13px; color: #333; }
+        .records-table tr:hover { background: #f9f9f9; }
+        .record-photo {
+            width: 50px; height: 50px; object-fit: cover; border-radius: 8px;
+            cursor: pointer;
+        }
+        .record-photo-placeholder {
+            width: 50px; height: 50px; background: #f0f0f0;
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            color: #ccc; font-size: 18px;
+        }
+        .record-actions button {
+            padding: 6px 12px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 12px; margin-right: 5px;
+        }
+        .btn-view { background: #e8f5e9; color: #4CAF50; }
+        .btn-edit { background: #e3f2fd; color: #1976D2; }
+        .btn-delete { background: #ffebee; color: #e53935; }
+        .btn-view:hover { background: #c8e6c9; }
+        .btn-edit:hover { background: #bbdefb; }
+        .btn-delete:hover { background: #ffcdd2; }
+        
+        .no-records {
+            text-align: center; padding: 40px; color: #999;
+        }
+        
+        /* 记录标签页 */
+        .records-tabs {
+            display: flex; gap: 10px; margin-bottom: 20px;
+            border-bottom: 2px solid #eee; padding-bottom: 15px;
+        }
+        .records-tab {
+            padding: 10px 20px; border: none; border-radius: 10px;
+            background: #f5f5f5; color: #666; cursor: pointer;
+            font-size: 14px; transition: all 0.3s;
+        }
+        .records-tab:hover { background: #e8e8e8; }
+        .records-tab.active {
+            background: linear-gradient(135deg, #4CAF50, #8BC34A);
+            color: #fff; font-weight: 600;
+        }
+        .records-content { display: block; }
+        
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #f9f9f9; border-radius: 15px; padding: 20px;
+            display: flex; align-items: center; gap: 15px;
+        }
+        .stat-card.clickable { cursor: pointer; transition: all 0.2s; }
+        .stat-card.clickable:hover { background: #f1f5f9; transform: translateY(-2px); }
+        .stat-icon {
+            width: 60px; height: 60px; border-radius: 15px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px;
+        }
+        .stat-info { flex: 1; }
+        .stat-number { font-size: 28px; font-weight: 700; color: #333; }
+        .stat-desc { font-size: 13px; color: #888; margin-top: 2px; }
+        .stat-progress {
+            height: 6px; background: #e0e0e0; border-radius: 3px;
+            margin-top: 10px; overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%; background: #4CAF50; border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+        .stat-ratio { font-size: 11px; color: #888; margin-top: 5px; }
+        
+        /* 统计详情 */
+        .stats-details {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 30px;
+            margin-top: 20px;
+        }
+        .stats-column h3 {
+            font-size: 16px; color: #333; margin-bottom: 15px;
+            padding-bottom: 10px; border-bottom: 2px solid #eee;
+        }
+        .visited-list {
+            display: flex; flex-wrap: wrap; gap: 8px;
+        }
+        .visited-tag {
+            padding: 6px 12px; background: #e8f5e9; color: #2E7D32;
+            border-radius: 20px; font-size: 13px;
+        }
+        .visited-tag.world {
+            background: #e3f2fd; color: #1565C0;
+        }
+        .year-group {
+            width: 100%;
+        }
+        .year-title {
+            font-size: 13px; color: #666; margin: 8px 0;
+        }
+        .member-stats-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .member-stats-summary {
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 1000px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .stats-details { grid-template-columns: 1fr; }
+        }
+        
+        /* 照片查看弹窗 */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 3000;
+            align-items: center; justify-content: center;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            max-width: 90%; max-height: 90%; position: relative;
+        }
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .gallery-item img {
+            width: 100%; height: 100%;
+            object-fit: cover; border-radius: 8px; cursor: pointer;
+        }
+        .gallery-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 36px; height: 36px; border-radius: 50%;
+            border: none; background: rgba(0,0,0,0.6); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+        }
+        .gallery-nav.prev { left: -50px; }
+        .gallery-nav.next { right: -50px; }
+        .modal-content img {
+            max-width: 100%; max-height: 85vh; border-radius: 10px;
+        }
+        .modal-close {
+            position: absolute; top: -40px; right: 0;
+            background: none; border: none; color: #fff;
+            font-size: 30px; cursor: pointer;
+        }
+        .modal-info {
+            color: #fff; text-align: center; margin-top: 15px;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-content { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="fileProtocolNotice" style="display:none;padding:10px 14px;background:#fff3cd;border:1px solid #ffeeba;border-radius:10px;color:#856404;margin-bottom:12px;font-size:13px;">
+            检测到使用本地文件方式打开。地图需要通过本地服务器访问才能显示（例如运行：python -m http.server）。
+        </div>
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-globe-americas"></i>
+                <h1>旅行足迹</h1>
+            </div>
+            <div class="stats-summary">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalPlaces">0</div>
+                    <div class="stat-label">打卡地点</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalProvinces">0</div>
+                    <div class="stat-label">省份/国家</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="map-section">
+                    <div class="section-title">
+                        <i class="fas fa-map-marked-alt"></i>
+                        <span>我的足迹地图</span>
+                    </div>
+                    <div class="map-tabs">
+                        <button class="map-tab active" id="chinaTab">
+                            <i class="fas fa-flag"></i> 中国地图
+                        </button>
+                        <button class="map-tab" id="worldTab">
+                            <i class="fas fa-globe"></i> 世界地图
+                        </button>
+                    </div>
+                    <div class="map-container">
+                        <div id="chinaMap"></div>
+                        <div id="worldMap" style="display:none;"></div>
+                    </div>
+                    <div class="map-legend">
+                        <div class="legend-item">
+                            <div class="legend-color legend-visited"></div>
+                            <span>已打卡</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color legend-unvisited"></div>
+                            <span>未打卡</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sidebar">
+                <div class="panel">
+                    <div class="section-title">
+                        <i class="fas fa-plus-circle"></i>
+                        <span>添加打卡</span>
+                    </div>
+                    <form id="checkinForm" onsubmit="handleSubmit(event)">
+                        <!-- 中国省份选择（仅在中国地图时显示） -->
+                        <div class="form-group" id="provinceSelectGroup">
+                            <label><i class="fas fa-flag"></i> 选择省份</label>
+                            <select id="provinceSelect">
+                                <option value="">-- 请选择省份 --</option>
+                                <option value="北京,39.9,116.4">北京</option>
+                                <option value="上海,31.2,121.5">上海</option>
+                                <option value="天津,39.1,117.2">天津</option>
+                                <option value="重庆,29.6,106.5">重庆</option>
+                                <option value="黑龙江,45.8,126.5">黑龙江</option>
+                                <option value="吉林,43.9,125.3">吉林</option>
+                                <option value="辽宁,41.8,123.4">辽宁</option>
+                                <option value="内蒙古,40.8,111.7">内蒙古</option>
+                                <option value="河北,38.0,114.5">河北</option>
+                                <option value="山西,37.9,112.5">山西</option>
+                                <option value="陕西,34.3,108.9">陕西</option>
+                                <option value="山东,36.7,117.0">山东</option>
+                                <option value="河南,34.8,113.7">河南</option>
+                                <option value="江苏,32.1,118.8">江苏</option>
+                                <option value="安徽,31.9,117.3">安徽</option>
+                                <option value="浙江,30.3,120.2">浙江</option>
+                                <option value="福建,26.1,119.3">福建</option>
+                                <option value="江西,28.7,115.9">江西</option>
+                                <option value="湖北,30.6,114.3">湖北</option>
+                                <option value="湖南,28.2,112.9">湖南</option>
+                                <option value="广东,23.1,113.3">广东</option>
+                                <option value="广西,22.8,108.3">广西</option>
+                                <option value="海南,20.0,110.3">海南</option>
+                                <option value="四川,30.7,104.1">四川</option>
+                                <option value="贵州,26.6,106.7">贵州</option>
+                                <option value="云南,25.0,102.7">云南</option>
+                                <option value="西藏,29.6,91.1">西藏</option>
+                                <option value="甘肃,36.1,103.8">甘肃</option>
+                                <option value="青海,36.6,101.8">青海</option>
+                                <option value="宁夏,38.5,106.3">宁夏</option>
+                                <option value="新疆,43.8,87.6">新疆</option>
+                                <option value="台湾,25.0,121.5">台湾</option>
+                                <option value="香港,22.3,114.2">香港</option>
+                                <option value="澳门,22.2,113.5">澳门</option>
+                            </select>
+                        </div>
+                        <!-- 国家选择（仅在世界地图时显示） -->
+                        <div class="form-group" id="countrySelectGroup" style="display:none;">
+                            <label><i class="fas fa-globe"></i> 选择国家</label>
+                            <select id="countrySelect">
+                                <option value="">-- 请选择国家 --</option>
+                                <optgroup label="亚洲">
+                                    <option value="日本,36.2,138.3">日本</option>
+                                    <option value="韩国,37.6,127.0">韩国</option>
+                                    <option value="泰国,15.9,100.5">泰国</option>
+                                    <option value="新加坡,1.4,103.8">新加坡</option>
+                                    <option value="马来西亚,4.2,101.9">马来西亚</option>
+                                    <option value="越南,14.1,108.3">越南</option>
+                                    <option value="菲律宾,12.9,121.8">菲律宾</option>
+                                    <option value="印度尼西亚,-0.8,113.9">印度尼西亚</option>
+                                    <option value="印度,20.6,79.0">印度</option>
+                                    <option value="阿联酋,23.4,53.8">阿联酋</option>
+                                    <option value="土耳其,39.0,35.2">土耳其</option>
+                                    <option value="以色列,31.0,34.9">以色列</option>
+                                    <option value="尼泊尔,28.4,84.1">尼泊尔</option>
+                                    <option value="斯里兰卡,7.9,80.8">斯里兰卡</option>
+                                    <option value="柬埔寨,12.6,105.0">柬埔寨</option>
+                                    <option value="缅甸,21.9,96.0">缅甸</option>
+                                </optgroup>
+                                <optgroup label="欧洲">
+                                    <option value="英国,55.4,-3.4">英国</option>
+                                    <option value="法国,46.2,2.2">法国</option>
+                                    <option value="德国,51.2,10.5">德国</option>
+                                    <option value="意大利,41.9,12.6">意大利</option>
+                                    <option value="西班牙,40.5,-3.7">西班牙</option>
+                                    <option value="瑞士,46.8,8.2">瑞士</option>
+                                    <option value="荷兰,52.1,5.3">荷兰</option>
+                                    <option value="比利时,50.5,4.5">比利时</option>
+                                    <option value="奥地利,47.5,14.6">奥地利</option>
+                                    <option value="希腊,39.1,21.8">希腊</option>
+                                    <option value="葡萄牙,39.4,-8.2">葡萄牙</option>
+                                    <option value="捷克,49.8,15.5">捷克</option>
+                                    <option value="瑞典,60.1,18.6">瑞典</option>
+                                    <option value="挪威,60.5,8.5">挪威</option>
+                                    <option value="芬兰,61.9,25.7">芬兰</option>
+                                    <option value="丹麦,56.3,9.5">丹麦</option>
+                                    <option value="俄罗斯,61.5,105.3">俄罗斯</option>
+                                    <option value="冰岛,65.0,-19.0">冰岛</option>
+                                </optgroup>
+                                <optgroup label="美洲">
+                                    <option value="美国,37.1,-95.7">美国</option>
+                                    <option value="加拿大,56.1,-106.3">加拿大</option>
+                                    <option value="墨西哥,23.6,-102.6">墨西哥</option>
+                                    <option value="巴西,-14.2,-51.9">巴西</option>
+                                    <option value="阿根廷,-38.4,-63.6">阿根廷</option>
+                                    <option value="智利,-35.7,-71.5">智利</option>
+                                    <option value="秘鲁,-9.2,-75.0">秘鲁</option>
+                                    <option value="古巴,21.5,-78.0">古巴</option>
+                                </optgroup>
+                                <optgroup label="大洋洲">
+                                    <option value="澳大利亚,-25.3,133.8">澳大利亚</option>
+                                    <option value="新西兰,-40.9,174.9">新西兰</option>
+                                    <option value="斐济,-18.0,179.0">斐济</option>
+                                </optgroup>
+                                <optgroup label="非洲">
+                                    <option value="埃及,26.8,30.8">埃及</option>
+                                    <option value="南非,-30.6,22.9">南非</option>
+                                    <option value="摩洛哥,31.8,-7.1">摩洛哥</option>
+                                    <option value="肯尼亚,-0.0,38.0">肯尼亚</option>
+                                    <option value="坦桑尼亚,-6.4,34.9">坦桑尼亚</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="form-group" id="citySelectGroup">
+                            <label><i class="fas fa-city"></i> 选择城市</label>
+                            <select id="citySelect">
+                                <option value="">-- 请先选择省份/国家 --</option>
+                            </select>
+                            <input type="text" id="cityManual" placeholder="手动输入城市名称" style="display:none;margin-top:8px;">
+                        </div>
+                        <div class="form-group">
+                            <label>出游时间</label>
+                            <div style="display:flex;gap:10px;align-items:center;">
+                                <input type="date" id="startDate" required style="flex:1;">
+                                <span style="color:#888;">至</span>
+                                <input type="date" id="endDate" required style="flex:1;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-users"></i> 旅游成员</label>
+                            <div class="member-dropdown" id="memberDropdown">
+                                <div class="member-dropdown-trigger" onclick="toggleMemberDropdown()">
+                                    <span class="member-dropdown-text" id="memberDropdownText">请选择成员</span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                                <div class="member-dropdown-menu" id="memberDropdownMenu">
+                                    <div class="member-option" data-value="all" onclick="selectMember('all')">
+                                        <span>全选</span>
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="member-option" data-value="千鹤" onclick="selectMember('千鹤')">
+                                        <span>千鹤</span>
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="member-option" data-value="学妹" onclick="selectMember('学妹')">
+                                        <span>学妹</span>
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="member-option" data-value="wlan" onclick="selectMember('wlan')">
+                                        <span>wlan</span>
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="member-option" data-value="程炜" onclick="selectMember('程炜')">
+                                        <span>程炜</span>
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-camera"></i> 上传照片</label>
+                            <input type="file" id="photoInput" accept="image/*" multiple hidden>
+                            <div class="upload-btn" onclick="document.getElementById('photoInput').click()">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <span>点击选择照片</span>
+                            </div>
+                            <div class="photo-preview" id="photoPreview"></div>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-sticky-note"></i> 备注</label>
+                            <textarea id="note" rows="3" placeholder="记录这次旅行的美好回忆..."></textarea>
+                        </div>
+                        <input type="hidden" id="latitude">
+                        <input type="hidden" id="longitude">
+                        <input type="hidden" id="locationName">
+                        <div class="form-buttons">
+                            <button type="submit" class="btn-primary" id="submitBtn">
+                                <i class="fas fa-check"></i> 添加打卡
+                            </button>
+                            <button type="button" class="btn-cancel" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;">
+                                <i class="fas fa-times"></i> 取消编辑
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 打卡记录和统计 -->
+        <div class="records-section">
+            <div class="records-tabs">
+                <button class="records-tab active" id="chinaRecordsTab" onclick="showRecordsTab('china')">
+                    <i class="fas fa-flag"></i> 中国记录
+                </button>
+                <button class="records-tab" id="worldRecordsTab" onclick="showRecordsTab('world')">
+                    <i class="fas fa-globe"></i> 世界记录
+                </button>
+                <button class="records-tab" id="statsTab" onclick="showRecordsTab('stats')">
+                    <i class="fas fa-chart-pie"></i> 统计数据
+                </button>
+            </div>
+            
+            <!-- 中国记录 -->
+            <div id="chinaRecordsContainer" class="records-content">
+                <div class="no-records">
+                    <i class="fas fa-flag" style="font-size:40px;margin-bottom:15px;color:#4CAF50;"></i>
+                    <p>还没有中国打卡记录</p>
+                </div>
+            </div>
+            
+            <!-- 世界记录 -->
+            <div id="worldRecordsContainer" class="records-content" style="display:none;">
+                <div class="no-records">
+                    <i class="fas fa-globe" style="font-size:40px;margin-bottom:15px;color:#2196F3;"></i>
+                    <p>还没有世界打卡记录</p>
+                </div>
+            </div>
+            
+            <!-- 统计数据 -->
+            <div id="statsContainer" class="records-content" style="display:none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#e8f5e9;color:#4CAF50;">
+                            <i class="fas fa-flag"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-number" id="chinaProvinceCount">0</div>
+                            <div class="stat-desc">中国省份</div>
+                            <div class="stat-progress">
+                                <div class="progress-bar" id="chinaProgressBar" style="width:0%"></div>
+                            </div>
+                            <div class="stat-ratio" id="chinaRatio">0/34 (0%)</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#e3f2fd;color:#2196F3;">
+                            <i class="fas fa-globe"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-number" id="worldCountryCount">0</div>
+                            <div class="stat-desc">海外国家</div>
+                            <div class="stat-progress">
+                                <div class="progress-bar" id="worldProgressBar" style="width:0%;background:#2196F3;"></div>
+                            </div>
+                            <div class="stat-ratio" id="worldRatio">0/195 (0%)</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#fff3e0;color:#FF9800;">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-number" id="totalCheckins">0</div>
+                            <div class="stat-desc">总打卡次数</div>
+                        </div>
+                    </div>
+                    <div class="stat-card clickable" onclick="openPhotoGallery()">
+                        <div class="stat-icon" style="background:#fce4ec;color:#E91E63;">
+                            <i class="fas fa-camera"></i>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-number" id="totalPhotos">0</div>
+                            <div class="stat-desc">旅行照片</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stats-details">
+                    <div class="stats-column">
+                        <h3><i class="fas fa-flag" style="color:#4CAF50;"></i> 已打卡省份</h3>
+                        <div id="visitedProvincesList" class="visited-list"></div>
+                    </div>
+                    <div class="stats-column">
+                        <h3><i class="fas fa-globe" style="color:#2196F3;"></i> 已打卡国家</h3>
+                        <div id="visitedCountriesList" class="visited-list"></div>
+                    </div>
+                </div>
+
+                <div class="stats-details">
+                    <div class="stats-column">
+                        <h3><i class="fas fa-calendar-alt" style="color:#FF9800;"></i> 按年份统计（国家）</h3>
+                        <select id="yearStatsSelect" class="member-stats-select">
+                            <option value="all">全部年份</option>
+                        </select>
+                        <div id="yearStatsList" class="visited-list"></div>
+                    </div>
+                    <div class="stats-column">
+                        <h3><i class="fas fa-users" style="color:#1976D2;"></i> 成员统计</h3>
+                        <select id="memberStatsSelect" class="member-stats-select">
+                            <option value="all">全部成员</option>
+                        </select>
+                        <div id="memberStatsSummary" class="member-stats-summary"></div>
+                        <div id="memberStatsList" class="visited-list"></div>
+                    </div>
+                </div>
+                <div class="stats-tools">
+                    <button type="button" class="btn-secondary" onclick="exportRecords()">导出记录</button>
+                    <button type="button" class="btn-secondary" onclick="triggerImport()">导入记录</button>
+                    <input type="file" id="recordsFile" accept="application/json" style="display:none;">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 照片查看弹窗 -->
+    <div class="modal" id="photoModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <button class="gallery-nav prev" onclick="showGalleryPhoto(galleryIndex-1)"><i class="fas fa-chevron-left"></i></button>
+            <button class="gallery-nav next" onclick="showGalleryPhoto(galleryIndex+1)"><i class="fas fa-chevron-right"></i></button>
+            <img id="modalImage" src="" alt="照片">
+            <div class="modal-info" id="modalInfo"></div>
+        </div>
+    </div>
+
+    <!-- 照片墙弹窗 -->
+    <div class="modal" id="galleryModal">
+        <div class="modal-content" style="max-width:900px;">
+            <button class="modal-close" onclick="closeGallery()">&times;</button>
+            <h3 style="margin:0 0 15px 0;">旅行照片</h3>
+            <div id="galleryGrid" class="gallery-grid"></div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    // 城市数据库（本地搜索用）
+    var CITIES = [
+        {name:'北京',lat:39.9,lng:116.4,province:'北京'},
+        {name:'上海',lat:31.2,lng:121.5,province:'上海'},
+        {name:'广州',lat:23.1,lng:113.3,province:'广东'},
+        {name:'深圳',lat:22.5,lng:114.1,province:'广东'},
+        {name:'杭州',lat:30.3,lng:120.2,province:'浙江'},
+        {name:'南京',lat:32.1,lng:118.8,province:'江苏'},
+        {name:'成都',lat:30.7,lng:104.1,province:'四川'},
+        {name:'重庆',lat:29.6,lng:106.5,province:'重庆'},
+        {name:'武汉',lat:30.6,lng:114.3,province:'湖北'},
+        {name:'西安',lat:34.3,lng:109.0,province:'陕西'},
+        {name:'苏州',lat:31.3,lng:120.6,province:'江苏'},
+        {name:'天津',lat:39.1,lng:117.2,province:'天津'},
+        {name:'长沙',lat:28.2,lng:113.0,province:'湖南'},
+        {name:'青岛',lat:36.1,lng:120.4,province:'山东'},
+        {name:'大连',lat:38.9,lng:121.6,province:'辽宁'},
+        {name:'厦门',lat:24.5,lng:118.1,province:'福建'},
+        {name:'三亚',lat:18.3,lng:109.5,province:'海南'},
+        {name:'丽江',lat:26.9,lng:100.2,province:'云南'},
+        {name:'昆明',lat:25.0,lng:102.7,province:'云南'},
+        {name:'桂林',lat:25.3,lng:110.3,province:'广西'},
+        {name:'哈尔滨',lat:45.8,lng:126.5,province:'黑龙江'},
+        {name:'沈阳',lat:41.8,lng:123.4,province:'辽宁'},
+        {name:'济南',lat:36.7,lng:117.0,province:'山东'},
+        {name:'郑州',lat:34.8,lng:113.7,province:'河南'},
+        {name:'合肥',lat:31.9,lng:117.3,province:'安徽'},
+        {name:'福州',lat:26.1,lng:119.3,province:'福建'},
+        {name:'南昌',lat:28.7,lng:115.9,province:'江西'},
+        {name:'贵阳',lat:26.6,lng:106.7,province:'贵州'},
+        {name:'兰州',lat:36.1,lng:103.8,province:'甘肃'},
+        {name:'西宁',lat:36.6,lng:101.8,province:'青海'},
+        {name:'拉萨',lat:29.6,lng:91.1,province:'西藏'},
+        {name:'乌鲁木齐',lat:43.8,lng:87.6,province:'新疆'},
+        {name:'呼和浩特',lat:40.8,lng:111.7,province:'内蒙古'},
+        {name:'银川',lat:38.5,lng:106.3,province:'宁夏'},
+        {name:'太原',lat:37.9,lng:112.5,province:'山西'},
+        {name:'石家庄',lat:38.0,lng:114.5,province:'河北'},
+        {name:'长春',lat:43.9,lng:125.3,province:'吉林'},
+        {name:'南宁',lat:22.8,lng:108.4,province:'广西'},
+        {name:'海口',lat:20.0,lng:110.3,province:'海南'},
+        {name:'珠海',lat:22.3,lng:113.6,province:'广东'},
+        {name:'东莞',lat:23.0,lng:113.8,province:'广东'},
+        {name:'佛山',lat:23.0,lng:113.1,province:'广东'},
+        {name:'无锡',lat:31.5,lng:120.3,province:'江苏'},
+        {name:'宁波',lat:29.9,lng:121.5,province:'浙江'},
+        {name:'温州',lat:28.0,lng:120.7,province:'浙江'},
+        {name:'东京',lat:35.7,lng:139.7,country:'日本'},
+        {name:'大阪',lat:34.7,lng:135.5,country:'日本'},
+        {name:'京都',lat:35.0,lng:135.8,country:'日本'},
+        {name:'首尔',lat:37.6,lng:127.0,country:'韩国'},
+        {name:'釜山',lat:35.2,lng:129.1,country:'韩国'},
+        {name:'曼谷',lat:13.8,lng:100.5,country:'泰国'},
+        {name:'普吉岛',lat:7.9,lng:98.4,country:'泰国'},
+        {name:'清迈',lat:18.8,lng:99.0,country:'泰国'},
+        {name:'新加坡',lat:1.4,lng:103.8,country:'新加坡'},
+        {name:'吉隆坡',lat:3.1,lng:101.7,country:'马来西亚'},
+        {name:'巴厘岛',lat:-8.4,lng:115.2,country:'印度尼西亚'},
+        {name:'河内',lat:21.0,lng:105.8,country:'越南'},
+        {name:'胡志明市',lat:10.8,lng:106.6,country:'越南'},
+        {name:'马尼拉',lat:14.6,lng:121.0,country:'菲律宾'},
+        {name:'纽约',lat:40.7,lng:-74.0,country:'美国'},
+        {name:'洛杉矶',lat:34.1,lng:-118.2,country:'美国'},
+        {name:'旧金山',lat:37.8,lng:-122.4,country:'美国'},
+        {name:'伦敦',lat:51.5,lng:-0.1,country:'英国'},
+        {name:'巴黎',lat:48.9,lng:2.4,country:'法国'},
+        {name:'罗马',lat:41.9,lng:12.5,country:'意大利'},
+        {name:'柏林',lat:52.5,lng:13.4,country:'德国'},
+        {name:'悉尼',lat:-33.9,lng:151.2,country:'澳大利亚'},
+        {name:'墨尔本',lat:-37.8,lng:145.0,country:'澳大利亚'},
+        {name:'迪拜',lat:25.2,lng:55.3,country:'阿联酋'},
+        {name:'开罗',lat:30.0,lng:31.2,country:'埃及'},
+        {name:'莫斯科',lat:55.8,lng:37.6,country:'俄罗斯'},
+        {name:'台北',lat:25.0,lng:121.5,province:'台湾'},
+        {name:'香港',lat:22.3,lng:114.2,province:'香港'},
+        {name:'澳门',lat:22.2,lng:113.5,province:'澳门'}
+    ];
+    
+    var worldMap, chinaMap;
+    var currentMap = 'china';
+    var records = JSON.parse(localStorage.getItem('travelRecords') || '[]');
+    var tempMarker = null;
+    var selectedPhotos = [];
+    var visitedRegions = new Set();
+    var selectedRegionName = '';
+    var selectedRegionLat = null;
+    var selectedRegionLng = null;
+    var selectedCityName = '';
+    
+    // 国家名称中英文映射
+    var countryNames = {
+        // 亚洲
+        'China':'中国','Japan':'日本','South Korea':'韩国','North Korea':'朝鲜',
+        'Mongolia':'蒙古','Russia':'俄罗斯','Kazakhstan':'哈萨克斯坦',
+        'India':'印度','Pakistan':'巴基斯坦','Bangladesh':'孟加拉国','Sri Lanka':'斯里兰卡',
+        'Nepal':'尼泊尔','Bhutan':'不丹','Afghanistan':'阿富汗',
+        'Thailand':'泰国','Vietnam':'越南','Myanmar':'缅甸','Cambodia':'柬埔寨',
+        'Laos':'老挝','Malaysia':'马来西亚','Singapore':'新加坡','Indonesia':'印度尼西亚',
+        'Philippines':'菲律宾','Brunei':'文莱','East Timor':'东帝汶','Timor-Leste':'东帝汶',
+        'Iran':'伊朗','Iraq':'伊拉克','Saudi Arabia':'沙特阿拉伯','Yemen':'也门',
+        'Oman':'阿曼','United Arab Emirates':'阿联酋','Qatar':'卡塔尔','Bahrain':'巴林',
+        'Kuwait':'科威特','Jordan':'约旦','Israel':'以色列','Lebanon':'黎巴嫩',
+        'Syria':'叙利亚','Turkey':'土耳其','Cyprus':'塞浦路斯',
+        'Uzbekistan':'乌兹别克斯坦','Turkmenistan':'土库曼斯坦','Tajikistan':'塔吉克斯坦',
+        'Kyrgyzstan':'吉尔吉斯斯坦','Azerbaijan':'阿塞拜疆','Armenia':'亚美尼亚','Georgia':'格鲁吉亚',
+        // 欧洲
+        'United Kingdom':'英国','France':'法国','Germany':'德国','Italy':'意大利',
+        'Spain':'西班牙','Portugal':'葡萄牙','Netherlands':'荷兰','Belgium':'比利时',
+        'Switzerland':'瑞士','Austria':'奥地利','Poland':'波兰','Czech Republic':'捷克',
+        'Czechia':'捷克','Slovakia':'斯洛伐克','Hungary':'匈牙利','Romania':'罗马尼亚',
+        'Bulgaria':'保加利亚','Greece':'希腊','Serbia':'塞尔维亚','Croatia':'克罗地亚',
+        'Slovenia':'斯洛文尼亚','Bosnia and Herzegovina':'波黑','Montenegro':'黑山',
+        'North Macedonia':'北马其顿','Albania':'阿尔巴尼亚','Kosovo':'科索沃',
+        'Ukraine':'乌克兰','Belarus':'白俄罗斯','Moldova':'摩尔多瓦',
+        'Lithuania':'立陶宛','Latvia':'拉脱维亚','Estonia':'爱沙尼亚',
+        'Finland':'芬兰','Sweden':'瑞典','Norway':'挪威','Denmark':'丹麦','Iceland':'冰岛',
+        'Ireland':'爱尔兰','Luxembourg':'卢森堡','Monaco':'摩纳哥','Andorra':'安道尔',
+        'Malta':'马耳他','San Marino':'圣马力诺','Vatican':'梵蒂冈',
+        // 北美洲
+        'United States of America':'美国','United States':'美国','USA':'美国',
+        'Canada':'加拿大','Mexico':'墨西哥','Guatemala':'危地马拉','Belize':'伯利兹',
+        'Honduras':'洪都拉斯','El Salvador':'萨尔瓦多','Nicaragua':'尼加拉瓜',
+        'Costa Rica':'哥斯达黎加','Panama':'巴拿马','Cuba':'古巴','Jamaica':'牙买加',
+        'Haiti':'海地','Dominican Republic':'多米尼加','Puerto Rico':'波多黎各',
+        'Bahamas':'巴哈马','Trinidad and Tobago':'特立尼达和多巴哥',
+        // 南美洲
+        'Brazil':'巴西','Argentina':'阿根廷','Chile':'智利','Peru':'秘鲁',
+        'Colombia':'哥伦比亚','Venezuela':'委内瑞拉','Ecuador':'厄瓜多尔',
+        'Bolivia':'玻利维亚','Paraguay':'巴拉圭','Uruguay':'乌拉圭',
+        'Guyana':'圭亚那','Suriname':'苏里南','French Guiana':'法属圭亚那',
+        // 非洲
+        'Egypt':'埃及','Libya':'利比亚','Tunisia':'突尼斯','Algeria':'阿尔及利亚',
+        'Morocco':'摩洛哥','Sudan':'苏丹','South Sudan':'南苏丹','Ethiopia':'埃塞俄比亚',
+        'Kenya':'肯尼亚','Tanzania':'坦桑尼亚','Uganda':'乌干达','Rwanda':'卢旺达',
+        'Somalia':'索马里','Djibouti':'吉布提','Eritrea':'厄立特里亚',
+        'Nigeria':'尼日利亚','Ghana':'加纳','Senegal':'塞内加尔','Mali':'马里',
+        'Niger':'尼日尔','Chad':'乍得','Cameroon':'喀麦隆','Central African Republic':'中非',
+        'Democratic Republic of the Congo':'刚果(金)','Republic of the Congo':'刚果(布)',
+        'Dem. Rep. Congo':'刚果(金)','Congo':'刚果',
+        'Angola':'安哥拉','Zambia':'赞比亚','Zimbabwe':'津巴布韦','Mozambique':'莫桑比克',
+        'Madagascar':'马达加斯加','Malawi':'马拉维','Botswana':'博茨瓦纳','Namibia':'纳米比亚',
+        'South Africa':'南非','Lesotho':'莱索托','Eswatini':'斯威士兰','Swaziland':'斯威士兰',
+        "Côte d'Ivoire":'科特迪瓦','Ivory Coast':'科特迪瓦',
+        'Burkina Faso':'布基纳法索','Benin':'贝宁','Togo':'多哥',
+        'Liberia':'利比里亚','Sierra Leone':'塞拉利昂','Guinea':'几内亚',
+        'Guinea-Bissau':'几内亚比绍','Gambia':'冈比亚','Mauritania':'毛里塔尼亚',
+        'Gabon':'加蓬','Equatorial Guinea':'赤道几内亚',
+        // 大洋洲
+        'Australia':'澳大利亚','New Zealand':'新西兰','Papua New Guinea':'巴布亚新几内亚',
+        'Fiji':'斐济','Solomon Islands':'所罗门群岛','Vanuatu':'瓦努阿图',
+        'New Caledonia':'新喀里多尼亚','Samoa':'萨摩亚','Tonga':'汤加',
+        // 其他
+        'Antarctica':'南极洲','Greenland':'格陵兰','Taiwan':'台湾',
+        'Hong Kong':'香港','Macau':'澳门','Palestine':'巴勒斯坦',
+        'Western Sahara':'西撒哈拉','Somaliland':'索马里兰'
+    };
+
+    // 根据中文名称获取所有可能的英文名称
+    function getCountryEnList(name) {
+        var list = [];
+        if (countryNames[name]) {
+            list.push(name);
+        } else {
+            for (var en in countryNames) {
+                if (countryNames[en] === name) list.push(en);
+            }
+        }
+        if (list.length === 0) list.push(name);
+        return list;
+    }
+
+    var regionRecords = {};
+    var visitedWorldEn = new Set();
+    var tooltipPhotoIndex = {};
+    var pinnedTooltipMarker = null;
+
+    function applyMarkerTooltip(marker, permanent) {
+        if (!marker || !marker._tooltipHtml || !marker._tooltipOpts) return;
+        var opts = Object.assign({}, marker._tooltipOpts, { permanent: !!permanent });
+        marker.unbindTooltip();
+        marker.bindTooltip(marker._tooltipHtml, opts);
+        if (permanent) marker.openTooltip();
+    }
+
+    function pinTooltip(marker) {
+        if (!marker) return;
+        if (pinnedTooltipMarker && pinnedTooltipMarker !== marker) {
+            unpinTooltip();
+        }
+        pinnedTooltipMarker = marker;
+        applyMarkerTooltip(marker, true);
+    }
+
+    function unpinTooltip() {
+        if (!pinnedTooltipMarker) return;
+        applyMarkerTooltip(pinnedTooltipMarker, false);
+        pinnedTooltipMarker.closeTooltip();
+        pinnedTooltipMarker = null;
+    }
+    
+    function isChinaRecord(r) {
+        if (r && r.mapType) return r.mapType === 'china';
+        return r && r.latitude > 18 && r.latitude < 54 && r.longitude > 73 && r.longitude < 135;
+    }
+
+    // 点是否在多边形内（支持Polygon/MultiPolygon）
+    function isPointInRing(point, ring) {
+        var x = point.lng, y = point.lat;
+        var inside = false;
+        for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            var xi = ring[i].lng, yi = ring[i].lat;
+            var xj = ring[j].lng, yj = ring[j].lat;
+            var intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function isPointInPolygon(point, latlngs) {
+        if (!latlngs || latlngs.length === 0) return false;
+        // Polygon: [ [LatLng...] , [hole...] ]
+        if (latlngs[0][0] && typeof latlngs[0][0].lat === 'number') {
+            if (!isPointInRing(point, latlngs[0])) return false;
+            for (var h = 1; h < latlngs.length; h++) {
+                if (isPointInRing(point, latlngs[h])) return false;
+            }
+            return true;
+        }
+        // MultiPolygon: [ [ [LatLng...] ], [ [LatLng...] ] ]
+        for (var p = 0; p < latlngs.length; p++) {
+            if (isPointInPolygon(point, latlngs[p])) return true;
+        }
+        return false;
+    }
+
+    function getWorldFeatureNamesByPoint(lat, lng) {
+        var names = [];
+        if (!worldGeoLayer) return names;
+        var point = { lat: lat, lng: lng };
+        worldGeoLayer.eachLayer(function(layer) {
+            if (!layer.getLatLngs) return;
+            var latlngs = layer.getLatLngs();
+            if (isPointInPolygon(point, latlngs)) {
+                var admin = layer.feature.properties.ADMIN || layer.feature.properties.NAME;
+                var name = layer.feature.properties.NAME;
+                var nameLong = layer.feature.properties.NAME_LONG;
+                if (admin) names.push(admin);
+                if (name && name !== admin) names.push(name);
+                if (nameLong && nameLong !== admin) names.push(nameLong);
+            }
+        });
+        return names;
+    }
+
+    function getTooltipPhotoIndex(recordId) {
+        if (tooltipPhotoIndex[recordId] == null) tooltipPhotoIndex[recordId] = 0;
+        return tooltipPhotoIndex[recordId];
+    }
+
+    function setTooltipPhotoIndex(recordId, index) {
+        tooltipPhotoIndex[recordId] = index;
+    }
+    var worldGeoLayer = null;
+    var chinaGeoLayer = null;
+    
+    // 中国省份列表
+    var chinaProvinceNames = [
+        '黑龙江','吉林','辽宁','内蒙古','新疆','西藏','青海','甘肃','宁夏',
+        '陕西','山西','河北','北京','天津','山东','河南','江苏','安徽',
+        '浙江','上海','江西','福建','台湾','广东','广西','海南','云南',
+        '贵州','四川','重庆','湖北','湖南','香港','澳门'
+    ];
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        if (location.protocol === 'file:') {
+            var notice = document.getElementById('fileProtocolNotice');
+            if (notice) notice.style.display = 'block';
+        }
+        bindEvents();
+        autoLoadRecords();
+        initWorldMap();
+        initChinaMap();
+    });
+
+    function autoLoadRecords() {
+        fetch('travel-records.json')
+            .then(function(res) { return res.ok ? res.json() : null; })
+            .then(function(data) {
+                if (Array.isArray(data) && data.length > 0) {
+                    records = data;
+                    try { localStorage.setItem('travelRecords', JSON.stringify(records)); } catch(e) {}
+                }
+                updateVisitedRegions();
+                refreshMapStyles();
+                renderRecordsTable();
+                updateStats();
+            })
+            .catch(function() {
+                updateVisitedRegions();
+                refreshMapStyles();
+                renderRecordsTable();
+                updateStats();
+            });
+    }
+    
+    function updateVisitedRegions() {
+        visitedRegions.clear();
+        visitedWorldEn.clear();
+        regionRecords = {};
+        
+        records.forEach(function(r) {
+            var region = r.locationName;
+            visitedRegions.add(region);
+            // 世界地图：优先使用GeoJSON匹配到的英文国家名
+            var isWorldRecord = r.mapType ? r.mapType === 'world' : !isChinaRecord(r);
+            if (isWorldRecord) {
+                var enList = r.worldFeatureNames && r.worldFeatureNames.length > 0
+                    ? r.worldFeatureNames
+                    : getWorldFeatureNamesByPoint(r.latitude, r.longitude);
+                if (enList.length === 0) {
+                    enList = r.countryEnList && r.countryEnList.length > 0
+                        ? r.countryEnList
+                        : getCountryEnList(region);
+                }
+                enList.forEach(function(en) { visitedWorldEn.add(en); });
+            }
+            
+            if (!regionRecords[region]) regionRecords[region] = [];
+            regionRecords[region].push(r);
+        });
+    }
+    
+    function isChinaVisited() {
+        for (var region of visitedRegions) {
+            for (var prov of chinaProvinceNames) {
+                if (region.includes(prov) || prov.includes(region)) return true;
+            }
+        }
+        for (var r of records) {
+            if (r.latitude > 18 && r.latitude < 54 && r.longitude > 73 && r.longitude < 135) return true;
+        }
+        return false;
+    }
+    
+    function isRegionVisited(name) {
+        if (!name) return false;
+        name = name.trim();
+        
+        if (name === 'China' || name === '中国') return isChinaVisited();
+        // 世界地图优先使用英文名称集合匹配
+        if (visitedWorldEn.has(name)) return true;
+        if (visitedRegions.has(name)) return true;
+        
+        // 检查中文名称（如果传入的是英文）
+        var cnName = countryNames[name];
+        if (cnName) {
+            cnName = cnName.trim();
+            if (visitedRegions.has(cnName)) return true;
+        }
+        
+        // 检查英文名称（如果传入的是中文，反向查找）
+        for (var enName in countryNames) {
+            if (countryNames[enName] === name && visitedRegions.has(enName)) return true;
+        }
+        
+        var shortName = name.replace(/省|市|自治区|壮族|维吾尔|回族|特别行政区/g, '');
+        if (visitedRegions.has(shortName)) return true;
+        
+        // 遍历已访问区域进行模糊匹配
+        var visited = false;
+        visitedRegions.forEach(function(region) {
+            region = region.trim();
+            if (name === region || shortName === region) {
+                visited = true;
+                return;
+            }
+            if (name.includes(region) || region.includes(name) || 
+                shortName.includes(region) || region.includes(shortName)) {
+                visited = true;
+                return;
+            }
+            // 检查中文映射
+            if (cnName && (cnName === region || cnName.includes(region) || region.includes(cnName))) {
+                visited = true;
+                return;
+            }
+        });
+        return visited;
+    }
+    
+    function getRegionRecords(name) {
+        var shortName = name.replace(/省|市|自治区|壮族|维吾尔|回族|特别行政区/g, '');
+        var result = [];
+        for (var region in regionRecords) {
+            if (name.includes(region) || region.includes(name) ||
+                shortName.includes(region) || region.includes(shortName) ||
+                region === name || region === shortName) {
+                result = result.concat(regionRecords[region]);
+            }
+        }
+        return result;
+    }
+    
+    function createTooltipContent(name, records) {
+        var shortName = name.replace(/省|市|自治区|壮族|维吾尔|回族|特别行政区/g, '');
+        
+        if (!records || records.length === 0) {
+            return '<div class="tooltip-unvisited"><b>' + shortName + '</b><br>未打卡</div>';
+        }
+        
+        var latestRecord = records[records.length - 1];
+        var html = '';
+        
+        if (latestRecord.photos && latestRecord.photos.length > 0) {
+            html += '<img src="' + latestRecord.photos[0] + '" class="tooltip-photo" />';
+        }
+        
+        html += '<div class="tooltip-info">';
+        html += '<div class="tooltip-title">' + shortName + '</div>';
+        var dateStr = latestRecord.startDate;
+        if (latestRecord.endDate && latestRecord.endDate !== latestRecord.startDate) {
+            dateStr += ' ~ ' + latestRecord.endDate;
+        }
+        // 兼容旧数据
+        if (latestRecord.travelDate) dateStr = latestRecord.travelDate;
+        html += '<div class="tooltip-date"><i class="fas fa-calendar"></i> ' + dateStr + '</div>';
+        
+        if (latestRecord.note) {
+            html += '<div class="tooltip-note">' + latestRecord.note.substring(0, 50) + (latestRecord.note.length > 50 ? '...' : '') + '</div>';
+        }
+        
+        if (records.length > 1) {
+            html += '<div style="color:#4CAF50;font-size:11px;margin-top:6px;">共 ' + records.length + ' 次打卡</div>';
+        }
+        html += '</div>';
+        
+        return html;
+    }
+    
+    function bindEvents() {
+        document.getElementById('worldTab').addEventListener('click', function() { showMap('world'); });
+        document.getElementById('chinaTab').addEventListener('click', function() { showMap('china'); });
+        document.getElementById('checkinForm').addEventListener('submit', handleSubmit);
+        document.getElementById('photoInput').addEventListener('change', handlePhotoSelect);
+        document.getElementById('provinceSelect').addEventListener('change', handleProvinceSelect);
+        document.getElementById('countrySelect').addEventListener('change', handleCountrySelect);
+        document.getElementById('citySelect').addEventListener('change', handleCitySelect);
+        document.getElementById('cityManual').addEventListener('input', handleManualCityInput);
+        var submitBtn = document.getElementById('submitBtn');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', handleSubmit);
+        }
+        var memberStatsSelect = document.getElementById('memberStatsSelect');
+        if (memberStatsSelect) {
+            memberStatsSelect.addEventListener('change', updateMemberStats);
+        }
+        var yearStatsSelect = document.getElementById('yearStatsSelect');
+        if (yearStatsSelect) {
+            yearStatsSelect.addEventListener('change', function() {
+                updateStatsPage();
+            });
+        }
+    }
+    
+    function handleProvinceSelect() {
+        var value = document.getElementById('provinceSelect').value;
+        if (!value) return;
+        
+        var parts = value.split(',');
+        var name = parts[0];
+        var lat = parseFloat(parts[1]);
+        var lng = parseFloat(parts[2]);
+        
+        selectedRegionName = name;
+        selectedRegionLat = lat;
+        selectedRegionLng = lng;
+        selectedCityName = '';
+
+        document.getElementById('locationName').value = name;
+        document.getElementById('latitude').value = lat;
+        document.getElementById('longitude').value = lng;
+        document.getElementById('countrySelect').value = '';
+        
+        updateCityOptions('china', name);
+        document.getElementById('cityManual').value = '';
+        document.getElementById('cityManual').style.display = 'none';
+        document.getElementById('citySelect').disabled = false;
+
+        showMap('china');
+        selectLocation(lat, lng, 'china');
+        chinaMap.setView([lat, lng], 5);
+    }
+    
+    function handleCountrySelect() {
+        var value = document.getElementById('countrySelect').value;
+        if (!value) return;
+        
+        var parts = value.split(',');
+        var name = parts[0];
+        var lat = parseFloat(parts[1]);
+        var lng = parseFloat(parts[2]);
+        
+        selectedRegionName = name;
+        selectedRegionLat = lat;
+        selectedRegionLng = lng;
+        selectedCityName = '';
+
+        document.getElementById('locationName').value = name;
+        document.getElementById('latitude').value = lat;
+        document.getElementById('longitude').value = lng;
+        document.getElementById('provinceSelect').value = '';
+        
+        updateCityOptions('world', name);
+        document.getElementById('cityManual').value = '';
+        document.getElementById('cityManual').style.display = 'none';
+
+        showMap('world');
+        selectLocation(lat, lng, 'world');
+        worldMap.setView([lat, lng], 4);
+    }
+    
+    function updateCityOptions(mapType, regionName) {
+        var citySelect = document.getElementById('citySelect');
+        var manualInput = document.getElementById('cityManual');
+        citySelect.innerHTML = '';
+        manualInput.style.display = 'none';
+        manualInput.value = '';
+        selectedCityName = '';
+
+        if (!regionName) {
+            citySelect.innerHTML = '<option value="">-- 请先选择省份/国家 --</option>';
+            return;
+        }
+
+        var list = CITIES.filter(function(city) {
+            if (mapType === 'china') return city.province === regionName;
+            return city.country === regionName;
+        });
+
+        var options = '<option value="">-- 请选择城市 --</option>';
+        list.forEach(function(city) {
+            options += '<option value="' + city.name + ',' + city.lat + ',' + city.lng + '">' + city.name + '</option>';
+        });
+        options += '<option value="__other__">其他（手动输入）</option>';
+        citySelect.innerHTML = options;
+    }
+
+    function handleCitySelect() {
+        var value = document.getElementById('citySelect').value;
+        var manualInput = document.getElementById('cityManual');
+
+        if (!value) {
+            selectedCityName = '';
+            manualInput.style.display = 'none';
+            manualInput.value = '';
+            return;
+        }
+
+        if (value === '__other__') {
+            manualInput.style.display = 'block';
+            manualInput.value = '';
+            selectedCityName = '';
+            // 位置保持在省份/国家中心
+            if (selectedRegionLat != null && selectedRegionLng != null) {
+                document.getElementById('latitude').value = selectedRegionLat;
+                document.getElementById('longitude').value = selectedRegionLng;
+                selectLocation(selectedRegionLat, selectedRegionLng, currentMap);
+            }
+            return;
+        }
+
+        manualInput.style.display = 'none';
+        manualInput.value = '';
+
+        var parts = value.split(',');
+        var name = parts[0];
+        var lat = parseFloat(parts[1]);
+        var lng = parseFloat(parts[2]);
+        selectedCityName = name;
+
+        document.getElementById('latitude').value = lat;
+        document.getElementById('longitude').value = lng;
+        selectLocation(lat, lng, currentMap);
+
+        if (currentMap === 'china') {
+            chinaMap.setView([lat, lng], 6);
+        } else {
+            worldMap.setView([lat, lng], 5);
+        }
+    }
+
+    function handleManualCityInput() {
+        var manualInput = document.getElementById('cityManual');
+        selectedCityName = manualInput.value.trim();
+    }
+    
+    function handlePhotoSelect(e) {
+        var files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+        
+        // 压缩图片以避免LocalStorage超限
+        var tasks = files.map(function(file) {
+            return compressImage(file, 1200, 0.7);
+        });
+        
+        Promise.all(tasks).then(function(results) {
+            results.forEach(function(dataUrl) {
+                if (dataUrl) selectedPhotos.push(dataUrl);
+            });
+            updatePhotoPreview();
+        }).catch(function() {
+            alert('图片处理失败，请重试或换小一点的图片');
+        });
+    }
+
+    // 压缩图片：限制最大边长和质量
+    function compressImage(file, maxSize, quality) {
+        return new Promise(function(resolve) {
+            if (!file || !file.type || !file.type.startsWith('image/')) {
+                resolve(null);
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width;
+                    var h = img.height;
+                    var scale = Math.min(1, maxSize / Math.max(w, h));
+                    var nw = Math.round(w * scale);
+                    var nh = Math.round(h * scale);
+                    
+                    var canvas = document.createElement('canvas');
+                    canvas.width = nw;
+                    canvas.height = nh;
+                    var ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, nw, nh);
+                    var dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    resolve(dataUrl);
+                };
+                img.onerror = function() { resolve(null); };
+                img.src = e.target.result;
+            };
+            reader.onerror = function() { resolve(null); };
+            reader.readAsDataURL(file);
+        });
+    }
+    
+    function updatePhotoPreview() {
+        var container = document.getElementById('photoPreview');
+        container.innerHTML = '';
+        selectedPhotos.forEach(function(photo, index) {
+            var div = document.createElement('div');
+            div.className = 'photo-preview-item';
+            div.innerHTML = '<img src="' + photo + '" /><button type="button" class="remove-photo" data-index="' + index + '">&times;</button>';
+            container.appendChild(div);
+        });
+        container.querySelectorAll('.remove-photo').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                selectedPhotos.splice(parseInt(this.dataset.index), 1);
+                updatePhotoPreview();
+            });
+        });
+    }
+    
+    function initWorldMap() {
+        worldMap = L.map('worldMap', { center: [20, 0], zoom: 2, minZoom: 1, maxZoom: 10 });
+        if (!worldMap.getPane('photoPane')) {
+            var pane = worldMap.createPane('photoPane');
+            pane.style.zIndex = 1000;
+        }
+        
+        fetch('countries.geojson')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                worldGeoLayer = L.geoJSON(data, {
+                    style: function(feature) {
+                        var name = feature.properties.ADMIN || feature.properties.NAME || '';
+                        var visited = isRegionVisited(name);
+                        return {
+                            fillColor: visited ? '#4CAF50' : '#ccc',
+                            fillOpacity: visited ? 0.8 : 0.6,
+                            color: visited ? '#2E7D32' : '#999',
+                            weight: 1
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        var name = feature.properties.ADMIN || feature.properties.NAME;
+                        var displayName = countryNames[name] || name;
+                        var visited = isRegionVisited(name);
+                        
+                        // 初始时不显示标签（缩放级别低时隐藏）
+                        var initialZoom = worldMap.getZoom();
+                        var showLabel = initialZoom >= 3;
+                        
+                        var labelOffsetMap = {
+                            'Russia': [-60, 20]
+                        };
+                        var offset = labelOffsetMap[name] || [0, 0];
+                        layer.bindTooltip(displayName, {
+                            permanent: true,
+                            direction: 'center',
+                            className: 'region-label' + (visited ? ' visited' : '') + (showLabel ? '' : ' hidden'),
+                            offset: offset
+                        });
+                        
+                        // 保存引用以便后续更新
+                        layer._countryName = name;
+                        layer._displayName = displayName;
+                        
+                        layer.on('click', function(e) {
+                            L.DomEvent.stopPropagation(e);
+                            document.getElementById('locationName').value = displayName;
+                            document.getElementById('latitude').value = e.latlng.lat;
+                            document.getElementById('longitude').value = e.latlng.lng;
+                            document.getElementById('regionSelect').value = '';
+                            document.getElementById('citySearch').value = '';
+                            selectLocation(e.latlng.lat, e.latlng.lng, 'world');
+                        });
+                        
+                        layer.on('mouseover', function() {
+                            if (layer !== selectedLayer) {
+                                this.setStyle({ weight: 2, fillOpacity: 0.9 });
+                            }
+                        });
+                        layer.on('mouseout', function() {
+                            if (layer !== selectedLayer) {
+                                var v = isRegionVisited(name);
+                                this.setStyle({ weight: 1, fillOpacity: v ? 0.8 : 0.6 });
+                            }
+                        });
+                    }
+                }).addTo(worldMap);
+                
+                // GeoJSON加载完成后添加照片标记
+                setTimeout(function() {
+                    addPhotoMarkers();
+                    refreshMapStyles();
+                    renderRecordsTable();
+                    updateStats();
+                }, 100);
+            })
+            .catch(function() {
+                var notice = document.getElementById('fileProtocolNotice');
+                if (notice) notice.style.display = 'block';
+            });
+        
+        worldMap.on('click', function(e) { selectLocation(e.latlng.lat, e.latlng.lng, 'world'); });
+        worldMap.on('click', function() { unpinTooltip(); });
+        
+        // 监听缩放事件，更新标记大小和标签显示
+        worldMap.on('zoomend', function() {
+            updateMarkerSizes('world');
+            updateWorldLabels();
+        });
+    }
+    
+    // 根据缩放级别更新世界地图标签显示
+    function updateWorldLabels() {
+        if (!worldGeoLayer || !worldMap) return;
+        
+        var zoom = worldMap.getZoom();
+        var showLabels = zoom >= 3; // 缩放级别>=3时显示标签
+        
+        worldGeoLayer.eachLayer(function(layer) {
+            var tooltip = layer.getTooltip();
+            if (tooltip) {
+                var el = tooltip.getElement();
+                if (el) {
+                    if (showLabels) {
+                        el.classList.remove('hidden');
+                    } else {
+                        el.classList.add('hidden');
+                    }
+                }
+            }
+        });
+    }
+    
+    function initChinaMap() {
+        chinaMap = L.map('chinaMap', { center: [35, 105], zoom: 4, minZoom: 3, maxZoom: 10 });
+        if (!chinaMap.getPane('photoPane')) {
+            var pane = chinaMap.createPane('photoPane');
+            pane.style.zIndex = 1000;
+        }
+        
+        fetch('china.geojson')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                chinaGeoLayer = L.geoJSON(data, {
+                    style: function(feature) {
+                        var name = feature.properties.name;
+                        var visited = isRegionVisited(name);
+                        return {
+                            fillColor: visited ? '#4CAF50' : '#ccc',
+                            fillOpacity: visited ? 0.8 : 0.6,
+                            color: visited ? '#2E7D32' : '#999',
+                            weight: 1.5
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        var name = feature.properties.name;
+                        var shortName = name.replace(/省|市|自治区|壮族|维吾尔|回族|特别行政区/g, '');
+                        var visited = isRegionVisited(name);
+                        
+                        // 在区域中心显示名称标签
+                        layer.bindTooltip(shortName, {
+                            permanent: true,
+                            direction: 'center',
+                            className: 'region-label' + (visited ? ' visited' : '')
+                        });
+
+                        layer.on('click', function(e) {
+                            L.DomEvent.stopPropagation(e);
+                            document.getElementById('locationName').value = shortName;
+                            document.getElementById('latitude').value = e.latlng.lat;
+                            document.getElementById('longitude').value = e.latlng.lng;
+                            document.getElementById('regionSelect').value = '';
+                            document.getElementById('citySearch').value = '';
+                            selectLocation(e.latlng.lat, e.latlng.lng, 'china');
+                        });
+                        
+                        layer.on('mouseover', function() {
+                            if (layer !== selectedLayer) {
+                                this.setStyle({ weight: 3, fillOpacity: 0.9 });
+                            }
+                        });
+                        layer.on('mouseout', function() {
+                            if (layer !== selectedLayer) {
+                                var v = isRegionVisited(name);
+                                this.setStyle({ weight: 1.5, fillOpacity: v ? 0.8 : 0.6 });
+                            }
+                        });
+                    }
+                }).addTo(chinaMap);
+                
+                // GeoJSON加载完成后添加照片标记
+                addPhotoMarkers();
+                refreshMapStyles();
+                renderRecordsTable();
+                updateStats();
+            })
+            .catch(function() {
+                var notice = document.getElementById('fileProtocolNotice');
+                if (notice) notice.style.display = 'block';
+            });
+        
+        chinaMap.on('click', function(e) { selectLocation(e.latlng.lat, e.latlng.lng, 'china'); });
+        chinaMap.on('click', function() { unpinTooltip(); });
+        
+        // 监听缩放事件，更新标记大小
+        chinaMap.on('zoomend', function() {
+            updateMarkerSizes('china');
+        });
+    }
+    
+    // 存储照片标记
+    var photoMarkers = [];
+    var chinaPhotoMarkers = [];
+    var worldPhotoMarkers = [];
+    
+    // 根据缩放级别计算标记大小（与地图缩放比例一致）
+    function getMarkerSize(zoom, mapType) {
+        // 使用2的幂次方，与地图瓦片缩放比例一致
+        var baseSize = mapType === 'china' ? 35 : 25;
+        var baseZoom = mapType === 'china' ? 4 : 2;
+        var scale = Math.pow(2, (zoom - baseZoom) * 0.5); // 每2级缩放，大小翻倍
+        var size = Math.max(20, Math.min(120, baseSize * scale));
+        return Math.round(size);
+    }
+    
+    // 计算同一位置多个标记的偏移
+    function getMarkerOffset(index, total, zoom) {
+        if (total <= 1) return { lat: 0, lng: 0 };
+        
+        // 根据缩放级别调整偏移距离
+        var baseOffset = 0.5 / Math.pow(2, zoom - 4);
+        
+        // 圆形排列
+        var angle = (2 * Math.PI * index) / total;
+        var radius = baseOffset * (total > 4 ? 1.5 : 1);
+        
+        return {
+            lat: Math.sin(angle) * radius,
+            lng: Math.cos(angle) * radius
+        };
+    }
+    
+    // 更新标记大小和位置
+    function updateMarkerSizes(mapType) {
+        var map = mapType === 'china' ? chinaMap : worldMap;
+        var markers = mapType === 'china' ? chinaPhotoMarkers : worldPhotoMarkers;
+        var zoom = map.getZoom();
+        var size = getMarkerSize(zoom, mapType);
+        
+        markers.forEach(function(item) {
+            // 重新计算偏移位置
+            var offset = getMarkerOffset(item.indexInGroup, item.totalInGroup, zoom);
+            var newLat = item.baseLat + offset.lat;
+            var newLng = item.baseLng + offset.lng;
+            
+            // 更新位置
+            item.marker.setLatLng([newLat, newLng]);
+            
+            // 重新生成HTML并更新图标
+            var newHtml = item.createHtml(size);
+            item.marker.setIcon(L.divIcon({
+                className: 'photo-icon',
+                html: newHtml,
+                iconSize: [size + 6, size + 6],
+                iconAnchor: [(size + 6) / 2, (size + 6) / 2]
+            }));
+        });
+    }
+    
+    function refreshMapStyles() {
+        updateVisitedRegions();
+        
+        // 重置选中状态
+        selectedLayer = null;
+        
+        if (worldGeoLayer) {
+            worldGeoLayer.eachLayer(function(layer) {
+                var name = layer.feature.properties.ADMIN || layer.feature.properties.NAME || '';
+                var visited = isRegionVisited(name);
+                var displayName = countryNames[name] || name;
+                
+                layer.setStyle({
+                    fillColor: visited ? '#4CAF50' : '#ccc',
+                    fillOpacity: visited ? 0.8 : 0.6,
+                    color: visited ? '#2E7D32' : '#999',
+                    weight: 1
+                });
+                
+                // 根据缩放级别决定是否显示标签
+                var zoom = worldMap.getZoom();
+                var showLabel = zoom >= 3;
+                
+                // 更新标签样式
+                var labelOffsetMap = {
+                    'Russia': [-60, 20]
+                };
+                var offset = labelOffsetMap[name] || [0, 0];
+                layer.unbindTooltip();
+                layer.bindTooltip(displayName, {
+                    permanent: true,
+                    direction: 'center',
+                    className: 'region-label' + (visited ? ' visited' : '') + (showLabel ? '' : ' hidden'),
+                    offset: offset
+                });
+            });
+        }
+        
+        if (chinaGeoLayer) {
+            chinaGeoLayer.eachLayer(function(layer) {
+                var name = layer.feature.properties.name;
+                var shortName = name.replace(/省|市|自治区|壮族|维吾尔|回族|特别行政区/g, '');
+                var visited = isRegionVisited(name);
+                
+                layer.setStyle({
+                    fillColor: visited ? '#4CAF50' : '#ccc',
+                    fillOpacity: visited ? 0.8 : 0.6,
+                    color: visited ? '#2E7D32' : '#999',
+                    weight: 1.5
+                });
+                
+                // 更新标签样式
+                layer.unbindTooltip();
+                layer.bindTooltip(shortName, {
+                    permanent: true,
+                    direction: 'center',
+                    className: 'region-label' + (visited ? ' visited' : '')
+                });
+            });
+        }
+        
+        // 添加照片标记
+        addPhotoMarkers();
+    }
+    
+    // 添加圆形照片标记
+    function addPhotoMarkers() {
+        // 清除旧标记
+        chinaPhotoMarkers.forEach(function(item) {
+            try { chinaMap.removeLayer(item.marker); } catch(e) {}
+        });
+        worldPhotoMarkers.forEach(function(item) {
+            try { worldMap.removeLayer(item.marker); } catch(e) {}
+        });
+        chinaPhotoMarkers = [];
+        worldPhotoMarkers = [];
+        
+        // 获取当前缩放级别对应的大小
+        var chinaZoom = chinaMap ? chinaMap.getZoom() : 4;
+        var worldZoom = worldMap ? worldMap.getZoom() : 2;
+        var chinaSize = getMarkerSize(chinaZoom, 'china');
+        var worldSize = getMarkerSize(worldZoom, 'world');
+        
+        // 按位置分组记录，计算同一位置的记录数
+        var locationGroups = {};
+        records.forEach(function(r) {
+            var key = r.locationName;
+            if (!locationGroups[key]) locationGroups[key] = [];
+            locationGroups[key].push(r);
+        });
+        
+        // 为每条记录添加照片标记
+        records.forEach(function(r) {
+            var isChina = isChinaRecord(r);
+            
+            // 获取同一位置的记录索引
+            var group = locationGroups[r.locationName];
+            var indexInGroup = group.indexOf(r);
+            var totalInGroup = group.length;
+            
+            // 创建标记HTML的函数
+            function createMarkerHtml(size) {
+                var markerStyle = 'width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.3);overflow:hidden;background:#f0f0f0;transition:transform 0.2s;';
+                if (r.photos && r.photos.length > 0) {
+                    return '<div style="' + markerStyle + '"><img src="' + r.photos[0] + '" style="width:100%;height:100%;object-fit:cover;display:block;"></div>';
+                } else {
+                    return '<div style="' + markerStyle + 'background:linear-gradient(135deg,#4CAF50,#8BC34A);display:flex;align-items:center;justify-content:center;color:#fff;font-size:' + Math.round(size * 0.4) + 'px;"><i class="fas fa-map-marker-alt"></i></div>';
+                }
+            }
+            
+            // 创建悬浮提示内容
+        var dateStr = r.startDate || r.travelDate || '';
+            if (r.endDate && r.endDate !== r.startDate) {
+                dateStr += ' ~ ' + r.endDate;
+            }
+            
+            var tooltipHtml = '<div style="text-align:center;">';
+            if (r.photos && r.photos.length > 0) {
+                var idx = getTooltipPhotoIndex(r.id);
+                var total = r.photos.length;
+                var imgSrc = r.photos[idx] || r.photos[0];
+                tooltipHtml += '<div class="tooltip-photo-wrap" data-record-id="' + r.id + '">';
+                if (total > 1) {
+                    tooltipHtml += '<button class="tooltip-nav" data-dir="prev" data-record-id="' + r.id + '"><i class="fas fa-chevron-left"></i></button>';
+                }
+                tooltipHtml += '<img class="tooltip-photo-img" data-record-id="' + r.id + '" src="' + imgSrc + '" style="max-width:220px;max-height:180px;border-radius:8px;margin-bottom:8px;">';
+                if (total > 1) {
+                    tooltipHtml += '<button class="tooltip-nav" data-dir="next" data-record-id="' + r.id + '"><i class="fas fa-chevron-right"></i></button>';
+                    tooltipHtml += '<div class="tooltip-photo-count" data-record-id="' + r.id + '">' + (idx + 1) + '/' + total + '</div>';
+                }
+                tooltipHtml += '</div>';
+            }
+            var locDisplay = r.locationName + (r.cityName ? ' / ' + r.cityName : '');
+            tooltipHtml += '<div style="font-weight:bold;font-size:14px;color:#333;">' + locDisplay + '</div>';
+            tooltipHtml += '<div style="font-size:12px;color:#666;">' + dateStr + '</div>';
+            if (r.members && r.members.length > 0) {
+                tooltipHtml += '<div style="font-size:12px;color:#1976D2;margin-top:5px;">' + r.members.join('、') + '</div>';
+            }
+            if (r.note) {
+                tooltipHtml += '<div style="font-size:12px;color:#888;margin-top:5px;">' + r.note + '</div>';
+            }
+            tooltipHtml += '</div>';
+            
+            // 添加到中国地图
+            if (isChina) {
+                var chinaOffset = getMarkerOffset(indexInGroup, totalInGroup, chinaZoom);
+                var chinaLat = r.latitude + chinaOffset.lat;
+                var chinaLng = r.longitude + chinaOffset.lng;
+                
+                var chinaHtml = createMarkerHtml(chinaSize);
+                var chinaMarker = L.marker([chinaLat, chinaLng], {
+                    icon: L.divIcon({
+                        className: 'photo-icon',
+                        html: chinaHtml,
+                        iconSize: [chinaSize + 6, chinaSize + 6],
+                        iconAnchor: [(chinaSize + 6) / 2, (chinaSize + 6) / 2]
+                    })
+                });
+                chinaMarker._tooltipHtml = tooltipHtml;
+                chinaMarker._tooltipOpts = {
+                    className: 'photo-tooltip',
+                    direction: 'top',
+                    offset: [0, -chinaSize / 2],
+                    interactive: true,
+                    pane: 'photoPane'
+                };
+                chinaMarker.bindTooltip(tooltipHtml, chinaMarker._tooltipOpts);
+                chinaMarker.on('click', function(e) {
+                    L.DomEvent.stopPropagation(e);
+                    pinTooltip(chinaMarker);
+                });
+                chinaMarker.on('tooltipopen', function(e) {
+                    if (e.tooltip && e.tooltip.getElement) {
+                        var el = e.tooltip.getElement();
+                        if (el) {
+                            L.DomEvent.disableClickPropagation(el);
+                            L.DomEvent.disableScrollPropagation(el);
+                        }
+                    }
+                });
+                chinaMarker.on('mouseout', function() {
+                    if (pinnedTooltipMarker !== chinaMarker) chinaMarker.closeTooltip();
+                });
+                chinaMarker.addTo(chinaMap);
+                chinaPhotoMarkers.push({ 
+                    marker: chinaMarker, 
+                    record: r, 
+                    createHtml: createMarkerHtml,
+                    indexInGroup: indexInGroup,
+                    totalInGroup: totalInGroup,
+                    baseLat: r.latitude,
+                    baseLng: r.longitude
+                });
+            }
+            
+            // 世界地图上也添加
+            var worldOffset = getMarkerOffset(indexInGroup, totalInGroup, worldZoom);
+            var worldLat = r.latitude + worldOffset.lat;
+            var worldLng = r.longitude + worldOffset.lng;
+            
+            var worldHtml = createMarkerHtml(worldSize);
+            var worldMarker = L.marker([worldLat, worldLng], {
+                icon: L.divIcon({
+                    className: 'photo-icon',
+                    html: worldHtml,
+                    iconSize: [worldSize + 6, worldSize + 6],
+                    iconAnchor: [(worldSize + 6) / 2, (worldSize + 6) / 2]
+                })
+            });
+            worldMarker._tooltipHtml = tooltipHtml;
+            worldMarker._tooltipOpts = {
+                className: 'photo-tooltip',
+                direction: 'top',
+                offset: [0, -worldSize / 2],
+                interactive: true,
+                pane: 'photoPane'
+            };
+            worldMarker.bindTooltip(tooltipHtml, worldMarker._tooltipOpts);
+            worldMarker.on('click', function(e) {
+                L.DomEvent.stopPropagation(e);
+                pinTooltip(worldMarker);
+            });
+            worldMarker.on('tooltipopen', function(e) {
+                if (e.tooltip && e.tooltip.getElement) {
+                    var el = e.tooltip.getElement();
+                    if (el) {
+                        L.DomEvent.disableClickPropagation(el);
+                        L.DomEvent.disableScrollPropagation(el);
+                    }
+                }
+            });
+            worldMarker.on('mouseout', function() {
+                if (pinnedTooltipMarker !== worldMarker) worldMarker.closeTooltip();
+            });
+            worldMarker.addTo(worldMap);
+            worldPhotoMarkers.push({ 
+                marker: worldMarker, 
+                record: r, 
+                createHtml: createMarkerHtml,
+                indexInGroup: indexInGroup,
+                totalInGroup: totalInGroup,
+                baseLat: r.latitude,
+                baseLng: r.longitude
+            });
+        });
+    }
+    
+    function showMap(type) {
+        currentMap = type;
+        document.getElementById('worldTab').classList.toggle('active', type === 'world');
+        document.getElementById('chinaTab').classList.toggle('active', type === 'china');
+        document.getElementById('worldMap').style.display = type === 'world' ? 'block' : 'none';
+        document.getElementById('chinaMap').style.display = type === 'china' ? 'block' : 'none';
+        
+        // 切换选择器显示
+        document.getElementById('provinceSelectGroup').style.display = type === 'china' ? 'block' : 'none';
+        document.getElementById('countrySelectGroup').style.display = type === 'world' ? 'block' : 'none';
+        
+        // 自动切换到对应的记录标签页
+        showRecordsTab(type);
+        
+        setTimeout(function() { (type === 'world' ? worldMap : chinaMap).invalidateSize(); }, 100);
+    }
+    
+    var selectedLayer = null;
+    
+    function selectLocation(lat, lng, mapType) {
+        // 重置之前选中的区域样式
+        if (selectedLayer) {
+            var prevVisited = isRegionVisited(selectedLayer.feature.properties.name || selectedLayer.feature.properties.ADMIN || '');
+            selectedLayer.setStyle({
+                weight: mapType === 'china' ? 1.5 : 1,
+                color: prevVisited ? '#2E7D32' : '#999',
+                fillOpacity: prevVisited ? 0.8 : 0.6
+            });
+            selectedLayer = null;
+        }
+        
+        // 查找并高亮包含该坐标的区域
+        var geoLayer = mapType === 'china' ? chinaGeoLayer : worldGeoLayer;
+        if (geoLayer) {
+            geoLayer.eachLayer(function(layer) {
+                if (layer.getBounds && layer.getBounds().contains([lat, lng])) {
+                    selectedLayer = layer;
+                    layer.setStyle({
+                        weight: 3,
+                        color: '#ff6b6b',
+                        fillOpacity: 0.7
+                    });
+                    layer.bringToFront();
+                }
+            });
+        }
+    }
+    
+    // 编辑记录相关
+    var editingRecordId = null;
+    
+    function editRecord(id) {
+        var record = records.find(function(r) { return r.id === id; });
+        if (!record) return;
+        
+        editingRecordId = id;
+        
+        // 填充表单数据
+        document.getElementById('locationName').value = record.locationName;
+        document.getElementById('latitude').value = record.latitude;
+        document.getElementById('longitude').value = record.longitude;
+        document.getElementById('startDate').value = record.startDate || record.travelDate || '';
+        document.getElementById('endDate').value = record.endDate || record.startDate || record.travelDate || '';
+        document.getElementById('note').value = record.note || '';
+        
+        // 切换到对应的地图
+        var mapType = record.mapType || 'china';
+        showMap(mapType);
+        
+        // 设置省份/国家选择
+        if (mapType === 'china') {
+            document.getElementById('provinceSelect').value = record.locationName;
+            document.getElementById('countrySelect').value = '';
+        } else {
+            document.getElementById('countrySelect').value = record.locationName;
+            document.getElementById('provinceSelect').value = '';
+        }
+
+        selectedRegionName = record.locationName;
+        selectedRegionLat = record.latitude;
+        selectedRegionLng = record.longitude;
+        selectedCityName = record.cityName || '';
+        updateCityOptions(mapType, record.locationName);
+        if (record.cityName) {
+            var citySelect = document.getElementById('citySelect');
+            var found = false;
+            for (var i = 0; i < citySelect.options.length; i++) {
+                if (citySelect.options[i].text === record.cityName) {
+                    citySelect.selectedIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                citySelect.value = '__other__';
+                document.getElementById('cityManual').style.display = 'block';
+                document.getElementById('cityManual').value = record.cityName;
+            }
+        }
+        
+        // 设置成员
+        selectedMembers = record.members ? record.members.slice() : [];
+        updateMemberDisplay();
+        
+        // 设置照片
+        selectedPhotos = record.photos ? record.photos.slice() : [];
+        updatePhotoPreview();
+        
+        // 更新按钮文字并显示取消按钮
+        document.querySelector('.btn-primary').innerHTML = '<i class="fas fa-save"></i> 保存修改';
+        document.getElementById('cancelEditBtn').style.display = 'block';
+        
+        // 滚动到表单
+        document.querySelector('.panel').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function cancelEdit() {
+        editingRecordId = null;
+        document.getElementById('checkinForm').reset();
+        document.getElementById('locationName').value = '';
+        document.getElementById('latitude').value = '';
+        document.getElementById('longitude').value = '';
+        document.getElementById('provinceSelect').value = '';
+        document.getElementById('countrySelect').value = '';
+        document.getElementById('citySelect').innerHTML = '<option value="">-- 请先选择省份/国家 --</option>';
+        document.getElementById('cityManual').value = '';
+        document.getElementById('cityManual').style.display = 'none';
+        selectedCityName = '';
+        selectedPhotos = [];
+        updatePhotoPreview();
+        selectedMembers = [];
+        updateMemberDisplay();
+        document.querySelector('.btn-primary').innerHTML = '<i class="fas fa-check"></i> 添加打卡';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+    }
+    
+    // 成员选择函数
+    var selectedMembers = [];
+    var memberList = ['千鹤', '学妹', 'wlan', '程炜'];
+    
+    function toggleMemberDropdown() {
+        document.getElementById('memberDropdown').classList.toggle('open');
+    }
+    
+    function selectMember(value) {
+        if (value === 'all') {
+            // 全选/取消全选
+            var allOption = document.querySelector('.member-option[data-value="all"]');
+            if (allOption.classList.contains('selected')) {
+                selectedMembers = [];
+                allOption.classList.remove('selected');
+            } else {
+                selectedMembers = memberList.slice();
+                allOption.classList.add('selected');
+            }
+        } else {
+            // 单个选择/取消
+            var index = selectedMembers.indexOf(value);
+            if (index > -1) {
+                selectedMembers.splice(index, 1);
+            } else {
+                selectedMembers.push(value);
+            }
+        }
+        
+        updateMemberDisplay();
+    }
+    
+    function updateMemberDisplay() {
+        // 更新选项的选中状态
+        memberList.forEach(function(m) {
+            var option = document.querySelector('.member-option[data-value="' + m + '"]');
+            if (selectedMembers.indexOf(m) > -1) {
+                option.classList.add('selected');
+            } else {
+                option.classList.remove('selected');
+            }
+        });
+        
+        // 更新全选状态
+        var allOption = document.querySelector('.member-option[data-value="all"]');
+        if (selectedMembers.length === memberList.length) {
+            allOption.classList.add('selected');
+        } else {
+            allOption.classList.remove('selected');
+        }
+        
+        // 更新显示文字
+        var text = document.getElementById('memberDropdownText');
+        if (selectedMembers.length === 0) {
+            text.textContent = '请选择成员';
+            text.style.color = '#999';
+        } else if (selectedMembers.length === memberList.length) {
+            text.textContent = '全部成员';
+            text.style.color = '#2E7D32';
+        } else {
+            text.textContent = selectedMembers.join('、');
+            text.style.color = '#333';
+        }
+    }
+    
+    function getSelectedMembers() {
+        return selectedMembers.slice();
+    }
+    
+    // 点击外部关闭下拉
+    document.addEventListener('click', function(e) {
+        var dropdown = document.getElementById('memberDropdown');
+        if (dropdown && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('open');
+        }
+    });
+    
+    function handleSubmit(e) {
+        if (e && e._handled) return;
+        if (e) e._handled = true;
+        if (e && e.preventDefault) e.preventDefault();
+        
+        var name = document.getElementById('locationName').value.trim();
+        var startDate = document.getElementById('startDate').value;
+        var endDate = document.getElementById('endDate').value;
+        var lat = document.getElementById('latitude').value;
+        var lng = document.getElementById('longitude').value;
+        var note = document.getElementById('note').value.trim();
+        var members = getSelectedMembers();
+        var cityName = selectedCityName || '';
+        var countryEnList = currentMap === 'world' ? getCountryEnList(name) : [];
+        var worldFeatureNames = currentMap === 'world'
+            ? getWorldFeatureNamesByPoint(parseFloat(lat), parseFloat(lng))
+            : [];
+        
+        if (!name) { alert('请选择省份/国家或搜索城市'); return; }
+        if (!startDate || !endDate) { alert('请选择出游起始和结束时间'); return; }
+        if (!lat || !lng) { alert('请选择地点'); return; }
+        if (members.length === 0) { alert('请选择至少一位旅游成员'); return; }
+        
+        var isEditing = !!editingRecordId;
+        
+        if (editingRecordId) {
+            // 更新现有记录
+            var index = records.findIndex(function(r) { return r.id === editingRecordId; });
+            if (index > -1) {
+                records[index] = {
+                    id: editingRecordId,
+                    locationName: name,
+                    startDate: startDate,
+                    endDate: endDate,
+                    latitude: parseFloat(lat),
+                    longitude: parseFloat(lng),
+                    photos: selectedPhotos.slice(),
+                    note: note,
+                    members: members,
+                    cityName: cityName,
+                    countryEnList: countryEnList,
+                    worldFeatureNames: worldFeatureNames,
+                    mapType: currentMap
+                };
+            }
+            editingRecordId = null;
+            document.querySelector('.btn-primary').innerHTML = '<i class="fas fa-check"></i> 添加打卡';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+        } else {
+            // 新增记录
+            var record = {
+                id: Date.now(),
+                locationName: name,
+                startDate: startDate,
+                endDate: endDate,
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng),
+                photos: selectedPhotos.slice(),
+                note: note,
+                members: members,
+                cityName: cityName,
+                countryEnList: countryEnList,
+                worldFeatureNames: worldFeatureNames,
+                mapType: currentMap
+            };
+            records.push(record);
+        }
+        
+        try {
+            localStorage.setItem('travelRecords', JSON.stringify(records));
+        } catch (err) {
+            alert('保存失败：本地存储空间不足。请删除部分照片或减少图片大小后重试。');
+            return;
+        }
+        
+        if (tempMarker) {
+            try { worldMap.removeLayer(tempMarker); } catch(e) {}
+            try { chinaMap.removeLayer(tempMarker); } catch(e) {}
+            tempMarker = null;
+        }
+        
+        refreshMapStyles();
+        renderRecordsTable();
+        updateStats();
+        
+        // 重置
+        document.getElementById('checkinForm').reset();
+        document.getElementById('locationName').value = '';
+        document.getElementById('latitude').value = '';
+        document.getElementById('longitude').value = '';
+        document.getElementById('provinceSelect').value = '';
+        document.getElementById('countrySelect').value = '';
+        document.getElementById('citySelect').innerHTML = '<option value="">-- 请先选择省份/国家 --</option>';
+        document.getElementById('cityManual').value = '';
+        document.getElementById('cityManual').style.display = 'none';
+        selectedCityName = '';
+        selectedPhotos = [];
+        updatePhotoPreview();
+        
+        // 重置成员选择
+        selectedMembers = [];
+        document.querySelectorAll('.member-option').forEach(function(opt) {
+            opt.classList.remove('selected');
+        });
+        document.getElementById('memberDropdownText').textContent = '请选择成员';
+        document.getElementById('memberDropdownText').style.color = '#999';
+        
+        alert(isEditing ? '修改成功！' : '打卡成功！');
+    }
+    
+    // 切换记录标签页
+    function showRecordsTab(tab) {
+        document.querySelectorAll('.records-tab').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelectorAll('.records-content').forEach(function(c) { c.style.display = 'none'; });
+        
+        if (tab === 'china') {
+            document.getElementById('chinaRecordsTab').classList.add('active');
+            document.getElementById('chinaRecordsContainer').style.display = 'block';
+        } else if (tab === 'world') {
+            document.getElementById('worldRecordsTab').classList.add('active');
+            document.getElementById('worldRecordsContainer').style.display = 'block';
+        } else {
+            document.getElementById('statsTab').classList.add('active');
+            document.getElementById('statsContainer').style.display = 'block';
+            updateStatsPage();
+        }
+    }
+    
+    function renderRecordsTable() {
+        // 分离中国和世界记录
+        var chinaRecords = [];
+        var worldRecords = [];
+        
+        records.forEach(function(r) {
+            // 根据mapType或坐标判断
+            var isChina = isChinaRecord(r);
+            if (isChina) {
+                chinaRecords.push(r);
+            } else {
+                worldRecords.push(r);
+            }
+        });
+        
+        // 渲染中国记录
+        var chinaContainer = document.getElementById('chinaRecordsContainer');
+        if (chinaRecords.length === 0) {
+            chinaContainer.innerHTML = '<div class="no-records"><i class="fas fa-flag" style="font-size:40px;margin-bottom:15px;color:#4CAF50;"></i><p>还没有中国打卡记录</p></div>';
+        } else {
+            chinaContainer.innerHTML = buildRecordsTable(chinaRecords);
+        }
+        
+        // 渲染世界记录
+        var worldContainer = document.getElementById('worldRecordsContainer');
+        if (worldRecords.length === 0) {
+            worldContainer.innerHTML = '<div class="no-records"><i class="fas fa-globe" style="font-size:40px;margin-bottom:15px;color:#2196F3;"></i><p>还没有世界打卡记录</p></div>';
+        } else {
+            worldContainer.innerHTML = buildRecordsTable(worldRecords);
+        }
+    }
+    
+    function buildRecordsTable(recordList) {
+        var html = '<table class="records-table"><thead><tr><th>照片</th><th>地点</th><th>日期</th><th>成员</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+        
+        recordList.slice().reverse().forEach(function(r) {
+            html += '<tr>';
+            var dateDisplay = r.startDate || r.travelDate || '';
+            if (r.endDate && r.endDate !== r.startDate) {
+                dateDisplay += ' ~ ' + r.endDate;
+            }
+            if (r.photos && r.photos.length > 0) {
+                html += '<td><img src="' + r.photos[0] + '" class="record-photo" onclick="viewPhoto(\'' + r.photos[0] + '\',\'' + r.locationName + '\',\'' + dateDisplay + '\')"></td>';
+            } else {
+                html += '<td><div class="record-photo-placeholder"><i class="fas fa-image"></i></div></td>';
+            }
+            var locText = r.locationName + (r.cityName ? ' / ' + r.cityName : '');
+            html += '<td><b>' + locText + '</b></td>';
+            html += '<td>' + dateDisplay + '</td>';
+            // 成员显示
+            var membersHtml = '-';
+            if (r.members && r.members.length > 0) {
+                membersHtml = r.members.map(function(m) {
+                    return '<span class="member-tag">' + m + '</span>';
+                }).join('');
+            }
+            html += '<td>' + membersHtml + '</td>';
+            html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.note || '-') + '</td>';
+            html += '<td class="record-actions">';
+            html += '<button class="btn-view" onclick="focusRecord(' + r.latitude + ',' + r.longitude + ')" title="在地图上查看"><i class="fas fa-map-marker-alt"></i></button>';
+            html += '<button class="btn-edit" onclick="editRecord(' + r.id + ')" title="编辑"><i class="fas fa-edit"></i></button>';
+            html += '<button class="btn-delete" onclick="deleteRecord(' + r.id + ')" title="删除"><i class="fas fa-trash"></i></button>';
+            html += '</td></tr>';
+        });
+        
+        html += '</tbody></table>';
+        return html;
+    }
+    
+    // 更新统计页面
+    function updateStatsPage() {
+        var chinaProvinces = new Set();
+        var worldCountries = new Set();
+        var totalPhotos = 0;
+        var yearStatsMap = {};
+        var memberSet = new Set();
+        
+        records.forEach(function(r) {
+            // 统计照片
+            if (r.photos) totalPhotos += r.photos.length;
+            
+            // 判断是中国还是世界
+            var isChina = isChinaRecord(r);
+            
+            var year = getRecordYear(r);
+            if (year) {
+                if (!yearStatsMap[year]) yearStatsMap[year] = { china: new Set(), world: new Set() };
+                if (isChina) {
+                    yearStatsMap[year].china.add(r.locationName);
+                } else {
+                    yearStatsMap[year].world.add(r.locationName);
+                }
+            }
+            if (isChina) {
+                chinaProvinces.add(r.locationName);
+            } else {
+                worldCountries.add(r.locationName);
+            }
+            if (r.members && r.members.length > 0) {
+                r.members.forEach(function(m) { memberSet.add(m); });
+            }
+        });
+        
+        // 更新统计数字
+        var chinaCount = chinaProvinces.size;
+        var worldCount = worldCountries.size;
+        var chinaPercent = Math.round((chinaCount / 34) * 100);
+        var worldPercent = Math.round((worldCount / 195) * 100);
+        
+        document.getElementById('chinaProvinceCount').textContent = chinaCount;
+        document.getElementById('worldCountryCount').textContent = worldCount;
+        document.getElementById('totalCheckins').textContent = records.length;
+        document.getElementById('totalPhotos').textContent = totalPhotos;
+        
+        document.getElementById('chinaProgressBar').style.width = chinaPercent + '%';
+        document.getElementById('worldProgressBar').style.width = worldPercent + '%';
+        
+        document.getElementById('chinaRatio').textContent = chinaCount + '/34 (' + chinaPercent + '%)';
+        document.getElementById('worldRatio').textContent = worldCount + '/195 (' + worldPercent + '%)';
+        
+        // 更新已打卡列表
+        var provincesHtml = '';
+        chinaProvinces.forEach(function(p) {
+            provincesHtml += '<span class="visited-tag">' + p + '</span>';
+        });
+        document.getElementById('visitedProvincesList').innerHTML = provincesHtml || '<span style="color:#999;">暂无</span>';
+        
+        var countriesHtml = '';
+        worldCountries.forEach(function(c) {
+            countriesHtml += '<span class="visited-tag world">' + c + '</span>';
+        });
+        document.getElementById('visitedCountriesList').innerHTML = countriesHtml || '<span style="color:#999;">暂无</span>';
+
+        // 年份统计
+        renderYearStats(yearStatsMap);
+
+        // 成员统计
+        initMemberStatsOptions(memberSet);
+        updateMemberStats();
+    }
+
+    function getRecordYear(r) {
+        var dateStr = r.startDate || r.travelDate || r.endDate || '';
+        if (!dateStr) return '';
+        return dateStr.slice(0, 4);
+    }
+
+    function renderYearStats(yearStatsMap) {
+        var yearList = Object.keys(yearStatsMap).sort(function(a, b) { return b - a; });
+        var html = '';
+        if (yearList.length === 0) {
+            document.getElementById('yearStatsList').innerHTML = '<span style="color:#999;">暂无</span>';
+            return;
+        }
+        var yearSelect = document.getElementById('yearStatsSelect');
+        if (yearSelect) {
+            var current = yearSelect.value || 'all';
+            var options = '<option value="all">全部年份</option>';
+            yearList.forEach(function(y) {
+                options += '<option value="' + y + '">' + y + '年</option>';
+            });
+            yearSelect.innerHTML = options;
+            yearSelect.value = yearList.indexOf(current) > -1 ? current : 'all';
+        }
+        if (yearSelect && yearSelect.value === 'all') {
+            var allChina = new Set();
+            var allWorld = new Set();
+            yearList.forEach(function(y) {
+                yearStatsMap[y].china.forEach(function(p) { allChina.add(p); });
+                yearStatsMap[y].world.forEach(function(c) { allWorld.add(c); });
+            });
+            html += '<div class="year-group">';
+            html += '<div class="year-title">全部年份 - 国内</div>';
+            if (allChina.size === 0) {
+                html += '<span style="color:#999;">暂无</span>';
+            } else {
+                allChina.forEach(function(p) { html += '<span class="visited-tag">' + p + '</span>'; });
+            }
+            html += '<div class="year-title" style="margin-top:6px;">全部年份 - 国外</div>';
+            if (allWorld.size === 0) {
+                html += '<span style="color:#999;">暂无</span>';
+            } else {
+                allWorld.forEach(function(c) { html += '<span class="visited-tag world">' + c + '</span>'; });
+            }
+            html += '</div>';
+        } else {
+            yearList.forEach(function(year) {
+                if (yearSelect && yearSelect.value !== year) return;
+                html += '<div class="year-group">';
+                html += '<div class="year-title">' + year + '年</div>';
+                var chinaSet = yearStatsMap[year].china;
+                var worldSet = yearStatsMap[year].world;
+                html += '<div class="year-title" style="margin-top:4px;">国内</div>';
+                if (chinaSet.size === 0) {
+                    html += '<span style="color:#999;">暂无</span>';
+                } else {
+                    chinaSet.forEach(function(p) {
+                        html += '<span class="visited-tag">' + p + '</span>';
+                    });
+                }
+                html += '<div class="year-title" style="margin-top:6px;">国外</div>';
+                if (worldSet.size === 0) {
+                    html += '<span style="color:#999;">暂无</span>';
+                } else {
+                    worldSet.forEach(function(c) {
+                        html += '<span class="visited-tag world">' + c + '</span>';
+                    });
+                }
+                html += '</div>';
+            });
+        }
+        document.getElementById('yearStatsList').innerHTML = html;
+    }
+
+    function initMemberStatsOptions(memberSet) {
+        var select = document.getElementById('memberStatsSelect');
+        var existing = Array.from(select.options).map(function(o) { return o.value; });
+        // 确保全部成员存在
+        if (existing.indexOf('all') === -1) {
+            select.innerHTML = '<option value="all">全部成员</option>';
+        }
+        memberSet.forEach(function(m) {
+            if (existing.indexOf(m) === -1) {
+                var opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                select.appendChild(opt);
+            }
+        });
+    }
+
+    function updateMemberStats() {
+        var select = document.getElementById('memberStatsSelect');
+        if (!select) return;
+        var member = select.value || 'all';
+        var memberRecords = records.filter(function(r) {
+            if (member === 'all') return true;
+            return r.members && r.members.indexOf(member) > -1;
+        });
+
+        var chinaSet = new Set();
+        var worldSet = new Set();
+        var photoCount = 0;
+
+        memberRecords.forEach(function(r) {
+            if (r.photos) photoCount += r.photos.length;
+            var isChina = isChinaRecord(r);
+            if (isChina) {
+                chinaSet.add(r.locationName);
+            } else {
+                worldSet.add(r.locationName);
+            }
+        });
+
+        var summary = '打卡：' + memberRecords.length + ' 次，省份：' + chinaSet.size + '，国家：' + worldSet.size + '，照片：' + photoCount;
+        document.getElementById('memberStatsSummary').textContent = summary;
+
+        var listHtml = '';
+        chinaSet.forEach(function(p) { listHtml += '<span class="visited-tag">' + p + '</span>'; });
+        worldSet.forEach(function(c) { listHtml += '<span class="visited-tag world">' + c + '</span>'; });
+        document.getElementById('memberStatsList').innerHTML = listHtml || '<span style="color:#999;">暂无</span>';
+    }
+
+    function exportRecords() {
+        var data = JSON.stringify(records || []);
+        var blob = new Blob([data], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'travel-records.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function triggerImport() {
+        var input = document.getElementById('recordsFile');
+        if (input) input.click();
+    }
+
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'recordsFile') {
+            var file = e.target.files && e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    var data = JSON.parse(evt.target.result);
+                    if (!Array.isArray(data)) throw new Error('invalid');
+                    records = data;
+                    localStorage.setItem('travelRecords', JSON.stringify(records));
+                    updateVisitedRegions();
+                    refreshMapStyles();
+                    renderRecordsTable();
+                    updateStats();
+                    alert('导入成功');
+                } catch (err) {
+                    alert('导入失败，请确认文件格式正确');
+                }
+            };
+            reader.readAsText(file, 'utf-8');
+        }
+    });
+    
+    function viewPhoto(src, location, date) {
+        document.getElementById('modalImage').src = src;
+        document.getElementById('modalInfo').innerHTML = '<b>' + location + '</b> - ' + date;
+        document.getElementById('photoModal').style.zIndex = '4000';
+        document.getElementById('photoModal').classList.add('show');
+    }
+
+    function showGalleryPhoto(index) {
+        if (!galleryPhotos || galleryPhotos.length === 0) return;
+        galleryIndex = (index + galleryPhotos.length) % galleryPhotos.length;
+        var p = galleryPhotos[galleryIndex];
+        viewPhoto(p.src, p.title, p.date);
+    }
+    
+    function closeModal() {
+        document.getElementById('photoModal').classList.remove('show');
+    }
+
+    var galleryPhotos = [];
+    var galleryIndex = 0;
+
+    function openPhotoGallery() {
+        var photos = [];
+        records.forEach(function(r) {
+            if (r.photos && r.photos.length > 0) {
+                r.photos.forEach(function(p) {
+                    photos.push({ src: p, title: r.locationName, date: r.startDate || r.travelDate || '' });
+                });
+            }
+        });
+        galleryPhotos = photos;
+        galleryIndex = 0;
+        var grid = document.getElementById('galleryGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        if (photos.length === 0) {
+            grid.innerHTML = '<div style="color:#999;">暂无照片</div>';
+        } else {
+            photos.forEach(function(p, idx) {
+                var item = document.createElement('div');
+                item.className = 'gallery-item';
+                var img = document.createElement('img');
+                img.src = p.src;
+                img.alt = '';
+                item.appendChild(img);
+                item.addEventListener('click', function() {
+                    galleryIndex = idx;
+                    viewPhoto(p.src, p.title, p.date);
+                });
+                grid.appendChild(item);
+            });
+        }
+        document.getElementById('galleryModal').classList.add('show');
+    }
+
+    function closeGallery() {
+        document.getElementById('galleryModal').classList.remove('show');
+    }
+    
+    function focusRecord(lat, lng) {
+        var isChina = (records.find(function(r){ return r.latitude === lat && r.longitude === lng; }) || {}).mapType === 'china'
+            ? true
+            : (lat > 18 && lat < 54 && lng > 73 && lng < 135);
+        if (isChina) {
+            showMap('china');
+            chinaMap.setView([lat, lng], 6);
+        } else {
+            showMap('world');
+            worldMap.setView([lat, lng], 5);
+        }
+    }
+    
+    function deleteRecord(id) {
+        if (!confirm('确定删除这条记录吗？')) return;
+        records = records.filter(function(r) { return r.id !== id; });
+        localStorage.setItem('travelRecords', JSON.stringify(records));
+        refreshMapStyles();
+        renderRecordsTable();
+        updateStats();
+    }
+    
+    function updateStats() {
+        // 计算中国省份和世界国家数量
+        var chinaProvinces = new Set();
+        var worldCountries = new Set();
+        
+        records.forEach(function(r) {
+            var isChina = isChinaRecord(r);
+            if (isChina) {
+                chinaProvinces.add(r.locationName);
+            } else {
+                worldCountries.add(r.locationName);
+            }
+        });
+        
+        document.getElementById('totalPlaces').textContent = records.length;
+        document.getElementById('totalProvinces').textContent = chinaProvinces.size + worldCountries.size;
+    }
+    
+    // ESC关闭弹窗
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeModal();
+    });
+    
+    // 悬浮照片翻页
+    document.addEventListener('click', function(e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.tooltip-nav') : null;
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var recordId = parseInt(btn.dataset.recordId, 10);
+        var dir = btn.dataset.dir;
+        var record = records.find(function(r) { return r.id === recordId; });
+        if (!record || !record.photos || record.photos.length <= 1) return;
+        var total = record.photos.length;
+        var idx = getTooltipPhotoIndex(recordId);
+        idx = dir === 'next' ? (idx + 1) % total : (idx - 1 + total) % total;
+        setTooltipPhotoIndex(recordId, idx);
+        // 更新所有对应tooltip的图片
+        document.querySelectorAll('.tooltip-photo-img[data-record-id="' + recordId + '"]').forEach(function(img) {
+            img.src = record.photos[idx];
+        });
+        document.querySelectorAll('.tooltip-photo-count[data-record-id="' + recordId + '"]').forEach(function(el) {
+            el.textContent = (idx + 1) + '/' + total;
+        });
+    }, true);
+
+    document.addEventListener('mousedown', function(e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.tooltip-nav') : null;
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+    </script>
+</body>
+</html>
